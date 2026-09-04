@@ -1,0 +1,22 @@
+﻿# Dependencies & Build Artifacts
+node_modules/
+.turbo/
+dist/
+build/
+.nx/
+*.log
+
+# Environment & Local Secrets
+.env
+.env.*
+!.env.example
+.DS_Store
+
+# Polyrepo Sub-Repositories (Isolated Repos)
+services/iam-service/
+services/gateway/
+services/media-service/
+services/media-worker/
+services/social-service/
+services/shared-kernel/
+frontend/social-web-client/
