@@ -1,24 +1,24 @@
-﻿{
-  name: social-platform-workspace,
-  private: true,
-  description: Agent-Native Clean Workspace for Social Platform,
-  workspaces: [
-    services/*,
-    services/iam-service/*,
-    services/shared-kernel/packages/*,
-    frontend/*
+{
+  "name": "social-platform-workspace",
+  "private": true,
+  "description": "Agent-Native Clean Workspace for Social Platform",
+  "workspaces": [
+    "services/*",
+    "services/iam-service/*",
+    "services/shared-kernel/packages/*",
+    "frontend/*"
   ],
-  scripts: {
-    infra:up: docker-compose -f services/shared-kernel/infra/docker/docker-compose.yaml up -d,
-    infra:down: docker-compose -f services/shared-kernel/infra/docker/docker-compose.yaml down,
-    lint: turbo run lint,
-    build: turbo run build,
-    test: turbo run test
+  "scripts": {
+    "infra:up": "docker-compose -f services/shared-kernel/infra/docker/docker-compose.yaml up -d",
+    "infra:down": "docker-compose -f services/shared-kernel/infra/docker/docker-compose.yaml down",
+    "lint": "turbo run lint",
+    "build": "turbo run build",
+    "test": "turbo run test"
   },
-  devDependencies: {
-    dotenv-cli: ^11.0.0,
-    turbo: latest,
-    typescript: ^5.0.0
+  "devDependencies": {
+    "dotenv-cli": "^11.0.0",
+    "turbo": "latest",
+    "typescript": "^5.0.0"
   },
-  packageManager: npm@11.14.1
+  "packageManager": "npm@11.14.1"
 }
