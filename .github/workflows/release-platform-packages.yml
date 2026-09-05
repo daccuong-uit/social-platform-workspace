@@ -1,0 +1,57 @@
+name: Release Platform Packages to GitHub Package Registry
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'platform/**'
+
+jobs:
+  publish-gpr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@company'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Contracts
+        run: npm --workspace=@company/contracts-events run build
+
+      - name: Build Core SDK
+        run: |
+          npm --workspace=@company/platform-config run build
+          npm --workspace=@company/platform-logger run build
+          npm --workspace=@company/platform-tracing run build
+          npm --workspace=@company/platform-cache run build
+          npm --workspace=@company/platform-security-sdk run build
+
+      - name: Build Transport SDK
+        run: |
+          npm --workspace=@company/platform-http-common run build
+          npm --workspace=@company/platform-event-bus run build
+
+      - name: Publish Packages to GPR
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm publish ./platform/contracts/events
+          npm publish ./platform/packages/config
+          npm publish ./platform/packages/logger
+          npm publish ./platform/packages/tracing
+          npm publish ./platform/packages/cache
+          npm publish ./platform/packages/security-sdk
+          npm publish ./platform/packages/http-common
+          npm publish ./platform/packages/event-bus

@@ -6,6 +6,8 @@
     "services/*",
     "services/iam-service/*",
     "services/shared-kernel/packages/*",
+    "platform/contracts/*",
+    "platform/packages/*",
     "frontend/*"
   ],
   "scripts": {

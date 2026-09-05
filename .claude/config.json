@@ -1,13 +1,13 @@
-﻿{
-  $schema: https://json.schemastore.org/mcp-settings.json,
-  mcpServers: {
-    filesystem: {
-      command: npx,
-      args: [-y, @modelcontextprotocol/server-filesystem, D:\\social-platform-workspace]
+{
+  "$schema": "https://json.schemastore.org/mcp-settings.json",
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "D:\\social-platform-workspace"]
     },
-    memory: {
-      command: npx,
-      args: [-y, @modelcontextprotocol/server-memory]
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
     }
   }
 }
