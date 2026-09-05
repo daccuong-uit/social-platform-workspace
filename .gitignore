@@ -18,7 +18,6 @@ services/gateway/
 services/media-service/
 services/media-worker/
 services/social-service/
-services/shared-kernel/
 frontend/social-web-client/
 
 .npmrc

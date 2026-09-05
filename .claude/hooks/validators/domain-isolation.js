@@ -3,14 +3,14 @@
  * PreToolUse Validator: Microservice Domain Isolation Guard
  * Triggered on tool: 'Edit|Write'
  * Enforces Architectural Invariants:
- * 1. Prohibits direct relative imports between microservices (e.g. `../../services/auth-service` inside social-service).
- * 2. Enforces usage of @platform/* packages from services/shared-kernel.
+ * 1. Prohibits direct relative imports between microservices.
+ * 2. Enforces usage of published platform packages for cross-service code.
  */
 
 const { readHookInput, blockAction, allowAction } = require('../utils/hook-io');
 
 // Match relative import crossing services boundaries
-// e.g. from '../services/auth-service' or '../../services/identity-service'
+// e.g. from '../services/iam-service' or '../../services/social-service'
 const CROSS_SERVICE_IMPORT_REGEX = /(?:import|from|require)\s*\(?['"][^'"]*\/services\/(?:iam-service|gateway|social-service|media-service)/i;
 
 async function main() {
@@ -27,7 +27,7 @@ async function main() {
       blockAction(
         `Architecture Violation: Direct relative cross-service imports are prohibited. ` +
         `Target file: ${targetPath}. ` +
-        `Services must communicate via API Gateway or shared packages under @platform/* namespace.`
+        `Services must communicate via API Gateway or published @daccuong-uit/* packages.`
       );
       return;
     }

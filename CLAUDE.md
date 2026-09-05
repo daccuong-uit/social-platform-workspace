@@ -11,12 +11,9 @@ This workspace is a high-performance Polyrepo/Monorepo architecture hosting soci
 - **`services/gateway/`** (`@app/gateway`):
   - Fastify + NestJS API Gateway with Throttler rate limiting.
   - Entry point for all client requests, routes to downstream microservices.
-- **`services/iam-service/auth-service/`** (`@app/auth-service`):
-  - Authentication, JWT issuance, refresh tokens, password hashing, and role-based policies.
-  - Prisma ORM (`services/iam-service/auth-service/prisma/schema.prisma`).
-- **`services/iam-service/identity-service/`** (`@app/identity-service`):
-  - User profiles, account identities, user metadata, and credential federation.
-  - Prisma ORM (`services/iam-service/identity-service/prisma/schema.prisma`).
+- **`services/iam-service/`** (`@app/iam-service`):
+  - Unified authentication, identity, profiles, sessions, MFA, roles, and permissions.
+  - One Prisma schema and one database boundary (`iam_db`).
 - **`services/social-service/`** (`@app/social-service`):
   - Core social domain: Posts, Comments, Likes, User social graphs, and feed streams.
   - Structured modular layered architecture (Controllers -> Services -> Repositories -> Event Listeners).
@@ -25,9 +22,7 @@ This workspace is a high-performance Polyrepo/Monorepo architecture hosting soci
   - Media upload management, metadata indexing, signed URLs, and BullMQ dispatching.
 - **`services/media-worker/`**:
   - Background asynchronous BullMQ media processor (transcoding, compression, thumbnails).
-- **`services/shared-kernel/`**:
-  - Reusable platform libraries under `@platform/*` namespace (`@platform/common`, `@platform/config`, `@platform/logger`, `@platform/redis`, `@platform/tracing`, `@platform/auth-sdk`).
-  - Unified local infrastructure (`services/shared-kernel/infra/docker/docker-compose.yaml`).
+- Shared reusable packages live in the independent `platform/` repository and are consumed through published npm packages.
 
 ### Frontend Directory: `frontend/`
 - **`frontend/social-web-client/`**: Modern client for social commerce.
@@ -38,28 +33,13 @@ This workspace is a high-performance Polyrepo/Monorepo architecture hosting soci
 
 All commands MUST be executed from workspace root or targeted using Turborepo / npm workspaces. Do not guess commands.
 
-### Monorepo-Wide Commands
+### Agent Orchestration Commands
 ```bash
-# Start all infrastructure (PostgreSQL, Redis, RabbitMQ)
+# Start local infrastructure (application services are independent repositories)
 npm run infra:up
 
 # Stop infrastructure
 npm run infra:down
-
-# Build all packages & services
-npm run build
-# Or target via turbo:
-npx turbo run build
-
-# Lint all packages & services
-npm run lint
-# Or target via turbo:
-npx turbo run lint
-
-# Run all unit tests
-npm run test
-# Or target via turbo:
-npx turbo run test
 ```
 
 ### Individual Service Commands
@@ -71,19 +51,13 @@ npm --workspace=@app/gateway run dev
 npm --workspace=@app/gateway run build
 npm --workspace=@app/gateway run test
 
-# Auth Service
-npm --workspace=@app/auth-service run dev
-npm --workspace=@app/auth-service run build
-npm --workspace=@app/auth-service run test
-npm --workspace=@app/auth-service run db:generate
-npm --workspace=@app/auth-service run db:migrate
-
-# Identity Service
-npm --workspace=@app/identity-service run dev
-npm --workspace=@app/identity-service run build
-npm --workspace=@app/identity-service run test
-npm --workspace=@app/identity-service run db:generate
-npm --workspace=@app/identity-service run db:migrate
+# IAM Service
+cd services/iam-service
+npm run dev
+npm run build
+npm run test
+npm run db:generate
+npm run db:migrate
 
 # Social Service
 npm --workspace=@app/social-service run dev
@@ -127,7 +101,7 @@ All NestJS services must follow clean module separation:
 
 ### C. Import Rules & Boundary Guardrails
 1. **Domain Isolation**: Microservices in `services/*` must NEVER import relative paths from other microservices (`../../services/other-service`). This is strictly enforced by PreToolUse deterministic hooks.
-2. **Shared Packages**: Cross-service code must be shared exclusively via `@platform/*` packages in `services/shared-kernel/packages/`.
+2. **Shared Packages**: Cross-service code must be shared exclusively via published `@daccuong-uit/*` packages from the `platform/` repository.
 3. **No Secret Commits**: Never edit or commit `.env` or credential files.
 4. **Fastify Compatibility**: Services use `@nestjs/platform-fastify`. Do not use Express-specific request/response idioms unless explicitly configured.
 

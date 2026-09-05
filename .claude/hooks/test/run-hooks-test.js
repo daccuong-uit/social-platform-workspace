@@ -122,7 +122,7 @@ runHookTest({
     tool_name: 'Edit',
     tool_input: {
       file_path: 'services/social-service/src/posts/post.service.ts',
-      content: "import { AuthService } from '../../services/iam-service/auth-service/src/auth.service';",
+      content: "import { IamService } from '../../services/iam-service/src/iam.service';",
     },
   },
   expectedExitCode: 2,
@@ -130,14 +130,14 @@ runHookTest({
 });
 
 runHookTest({
-  name: 'PreToolUse: Allow valid internal import and @platform package',
+  name: 'PreToolUse: Allow valid internal import and platform package',
   scriptPath: 'validators/domain-isolation.js',
   stdinPayload: {
     hook_event_name: 'PreToolUse',
     tool_name: 'Write',
     tool_input: {
       file_path: 'services/social-service/src/posts/post.service.ts',
-      content: "import { AppLogger } from '@platform/logger';\nimport { PostEntity } from '../entities/post.entity';",
+      content: "import { AppLogger } from '@daccuong-uit/platform-logger';\nimport { PostEntity } from '../entities/post.entity';",
     },
   },
   expectedExitCode: 0,

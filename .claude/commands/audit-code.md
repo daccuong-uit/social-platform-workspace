@@ -6,6 +6,6 @@ Audit code health, architectural boundaries, and security vulnerabilities across
 ## Audit Checklist
 - [ ] No hardcoded secrets or raw .env files committed.
 - [ ] No direct circular dependencies between services/*.
-- [ ] Cross-service communication goes through Gateway or published @platform/* packages.
-- [ ] All database access encapsulated in @platform/db or localized schemas.
+- [ ] Cross-service communication goes through Gateway or published @daccuong-uit/* packages.
+- [ ] All database access is encapsulated in localized service schemas.
 - [ ] Strict TypeScript checks enabled across all services.

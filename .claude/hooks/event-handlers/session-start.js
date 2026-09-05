@@ -16,9 +16,9 @@ async function main() {
   const contextMessage = 
     `=== Social Platform Workspace Active ===\n` +
     `- Event: SessionStart (Source: ${source})\n` +
-    `- Monorepo Architecture: Fastify + NestJS Services with Turborepo\n` +
-    `- Active Microservices: gateway, auth-service, identity-service, social-service, media-service, media-worker\n` +
-    `- Shared Kernel: services/shared-kernel/packages/* (@platform/*)\n` +
+    `- Polyrepo Architecture: Independent Fastify + NestJS services\n` +
+    `- Active Microservices: gateway, iam-service, social-service, media-service, media-worker\n` +
+    `- Shared Packages: published @daccuong-uit/* packages from the platform repository\n` +
     `- Invariant Rule: Cross-service direct relative imports are forbidden by PreToolUse hooks.\n` +
     `- For task guidance, consult CLAUDE.md and .architecture/ guidelines.`;
 

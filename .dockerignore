@@ -1,0 +1,25 @@
+﻿# Dependencies
+node_modules
+**/node_modules
+
+# Git
+.git
+**/.git
+.gitignore
+
+# Build outputs
+dist
+**/dist
+**/*.tsbuildinfo
+.turbo
+**/.turbo
+
+# Env files
+.env
+**/.env
+
+# Frontend (not needed for backend builds)
+frontend
+
+# Logs
+*.log
