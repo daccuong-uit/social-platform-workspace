@@ -1,0 +1,36 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Project: Start all",
+      "type": "npm",
+      "script": "project:up",
+      "problemMatcher": []
+    },
+    {
+      "label": "Project: Stop all",
+      "type": "npm",
+      "script": "project:down",
+      "problemMatcher": []
+    },
+    {
+      "label": "Service: Start selected",
+      "type": "shell",
+      "command": "npm run service:up -- ${input:composeService}",
+      "problemMatcher": []
+    },
+    {
+      "label": "Service: Stop selected",
+      "type": "shell",
+      "command": "npm run service:down -- ${input:composeService}",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "composeService",
+      "type": "promptString",
+      "description": "Docker Compose service name (for example: gateway or media-worker)"
+    }
+  ]
+}

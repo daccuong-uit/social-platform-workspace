@@ -22,8 +22,7 @@ From this directory:
 Copy-Item .env.example .env
 # Set NODE_AUTH_TOKEN in the current shell for private platform packages.
 $env:NODE_AUTH_TOKEN = "<GitHub Packages token>"
-docker compose build
-docker compose up -d
+npm run project:up
 docker compose ps
 ```
 
@@ -32,7 +31,28 @@ Open `http://localhost:4200`. Gateway health is `http://localhost:3000/api/v1/he
 Stop the stack:
 
 ```powershell
-docker compose down
+npm run project:down
+```
+
+The worker is included in `npm run infra:up` and starts after Redis, MinIO, and
+Media Service. To start only the shared infrastructure plus the media pipeline:
+
+```powershell
+npm run infra:up
+```
+
+To control one Compose service from the workspace root, use its Compose service
+name after the script:
+
+```powershell
+npm run service:up -- gateway
+npm run service:down -- gateway
+npm run service:up -- media-worker
+npm run service:down -- media-worker
+```
+
+`service:up` rebuilds the selected service when needed. `service:down` stops it
+without removing volumes.
 ```
 
 Volumes are preserved by `down`; use `docker compose down -v` only when you intentionally want to delete local database data.

@@ -129,6 +129,7 @@ services:
       MEDIA_DATABASE_URL: postgresql://${MEDIA_DB_USER:-media_admin}:${MEDIA_DB_PASSWORD:-media_password}@media-postgres:5432/${MEDIA_DB_NAME:-media_db}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379
       MINIO_ENDPOINT: minio
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-localhost}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - "3003:3003"
@@ -153,6 +154,7 @@ services:
     environment:
       SOCIAL_DATABASE_URL: postgresql://${SOCIAL_DB_USER:-social_admin}:${SOCIAL_DB_PASSWORD:-social_password}@social-postgres:5432/${SOCIAL_DB_NAME:-social_db}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379
+      MEDIA_SERVICE_URL: http://media-service:3003/api/v1
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - "3004:3004"
@@ -194,13 +196,15 @@ services:
     environment:
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379
       MINIO_ENDPOINT: minio:9000
-      MEDIA_SERVICE_URL: http://media-service:3003
+      MEDIA_SERVICE_URL: http://media-service:3003/api/v1
     restart: unless-stopped
     depends_on:
       redis:
         condition: service_healthy
       minio:
         condition: service_healthy
+      media-service:
+        condition: service_started
 
   frontend:
     build:
