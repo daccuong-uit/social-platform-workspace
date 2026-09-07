@@ -13,6 +13,7 @@
     "project:status": "node scripts/manage-repos.mjs status",
     "project:commit": "node scripts/manage-repos.mjs commit",
     "project:push": "node scripts/manage-repos.mjs push",
+    "hooks:install": "git config core.hooksPath .githooks",
     "backend:up": "docker compose up -d --build gateway iam-service media-service social-service media-worker",
     "backend:down": "docker compose stop gateway iam-service media-service social-service media-worker",
     "backend:build": "docker compose build gateway iam-service media-service social-service media-worker",
