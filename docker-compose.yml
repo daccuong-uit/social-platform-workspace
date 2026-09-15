@@ -1,4 +1,4 @@
-﻿
+
 services:
   # ─── Infrastructure ─────────────────────────────────────────────────────────
   iam-postgres:
@@ -206,7 +206,20 @@ services:
       media-service:
         condition: service_started
 
-  frontend:
+  # ─── Frontend Clients ───────────────────────────────────────────────────────
+  # IAM – SSO Auth & Fullsite Landing  →  http://localhost:4204
+  fe-iam:
+    build:
+      context: ./frontend/iam-web-client
+      dockerfile: Dockerfile
+    ports:
+      - "4204:80"
+    restart: unless-stopped
+    depends_on:
+      - gateway
+
+  # Social – Feeds, Posts, Friends, Reels  →  http://localhost:4200
+  fe-social:
     build:
       context: ./frontend/social-web-client
       dockerfile: Dockerfile
@@ -215,6 +228,48 @@ services:
     restart: unless-stopped
     depends_on:
       - gateway
+
+  # Video – Watch, Reels, Media  →  http://localhost:4201
+  fe-video:
+    build:
+      context: ./frontend/video-web-client
+      dockerfile: Dockerfile
+    ports:
+      - "4201:80"
+    restart: unless-stopped
+    depends_on:
+      - gateway
+
+  # Shop – Storefront, Products, Cart  →  http://localhost:4202
+  fe-shop:
+    build:
+      context: ./frontend/shop-web-client
+      dockerfile: Dockerfile
+    ports:
+      - "4202:80"
+    restart: unless-stopped
+    depends_on:
+      - gateway
+
+  # Stories – Reading, Collections, Publishing  →  http://localhost:4203
+  fe-stories:
+    build:
+      context: ./frontend/stories-web-client
+      dockerfile: Dockerfile
+    ports:
+      - "4203:80"
+    restart: unless-stopped
+    depends_on:
+      - gateway
+
+  # Portfolio – Developer Portfolio (static)  →  http://localhost:4205
+  fe-portfolio:
+    build:
+      context: ./frontend/portfolio-web-client
+      dockerfile: Dockerfile
+    ports:
+      - "4205:80"
+    restart: unless-stopped
 
 volumes:
   iam_postgres_data:
