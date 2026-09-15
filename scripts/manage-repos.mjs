@@ -3,10 +3,16 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
-const repositories = [
+
+const allRepositories = [
   '.',
   'platform',
   'frontend/social-web-client',
+  'frontend/iam-web-client',
+  'frontend/video-web-client',
+  'frontend/shop-web-client',
+  'frontend/stories-web-client',
+  'frontend/portfolio-web-client',
   'services/gateway',
   'services/iam-service',
   'services/media-service',
@@ -14,8 +20,55 @@ const repositories = [
   'services/social-service',
 ];
 
-const command = process.argv[2] ?? 'status';
-const message = process.argv.slice(3).join(' ') || 'chore: synchronize workspace changes';
+const aliasMap = {
+  root: '.',
+  workspace: '.',
+  platform: 'platform',
+  'fe-social': 'frontend/social-web-client',
+  'social-web-client': 'frontend/social-web-client',
+  'fe-iam': 'frontend/iam-web-client',
+  'iam-web-client': 'frontend/iam-web-client',
+  'fe-video': 'frontend/video-web-client',
+  'video-web-client': 'frontend/video-web-client',
+  'fe-shop': 'frontend/shop-web-client',
+  'shop-web-client': 'frontend/shop-web-client',
+  'fe-stories': 'frontend/stories-web-client',
+  'stories-web-client': 'frontend/stories-web-client',
+  'fe-portfolio': 'frontend/portfolio-web-client',
+  'portfolio-web-client': 'frontend/portfolio-web-client',
+  gateway: 'services/gateway',
+  'iam-service': 'services/iam-service',
+  'media-service': 'services/media-service',
+  'media-worker': 'services/media-worker',
+  'social-service': 'services/social-service',
+};
+
+const args = process.argv.slice(2);
+const command = args[0] ?? 'status';
+
+let targetRepo = null;
+const messageArgs = [];
+
+for (let i = 1; i < args.length; i++) {
+  const arg = args[i];
+  if (arg.startsWith('--repo=')) {
+    targetRepo = arg.split('=')[1];
+  } else if (!targetRepo && (aliasMap[arg] || allRepositories.includes(arg))) {
+    targetRepo = aliasMap[arg] || arg;
+  } else {
+    messageArgs.push(arg);
+  }
+}
+
+const resolvedRepo = targetRepo ? (aliasMap[targetRepo] || targetRepo) : null;
+if (targetRepo && (!resolvedRepo || !allRepositories.includes(resolvedRepo))) {
+  console.error(`Error: Unknown repository or alias "${targetRepo}".`);
+  console.error(`Available aliases: ${Object.keys(aliasMap).join(', ')}`);
+  process.exit(1);
+}
+
+const repositories = resolvedRepo ? [resolvedRepo] : allRepositories;
+const message = messageArgs.join(' ') || 'chore: synchronize workspace changes';
 
 function run(repository, gitArguments, options = {}) {
   const cwd = resolve(root, repository);
