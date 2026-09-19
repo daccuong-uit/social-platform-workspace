@@ -1,6 +1,18 @@
 
 services:
-  # ─── Infrastructure ─────────────────────────────────────────────────────────
+  # ════════════════════════════════════════════════════════════════════════════
+  # INFRASTRUCTURE — Persistent data stores, cache, object storage, tracing
+  # Each database follows the Database-per-Service pattern (no shared DBs).
+  # Volumes are persisted across restarts. All services have healthchecks.
+  # ════════════════════════════════════════════════════════════════════════════
+
+  # ─── PostgreSQL: IAM Service ─────────────────────────────────────────────
+  # Database : iam_db
+  # Purpose  : Stores users, sessions, tokens, MFA, roles, and permissions
+  # Consumer : services/iam-service
+  # Host Port: 5433  (internal: 5432)
+  # Creds    : ${IAM_DB_USER:-iam_admin} / ${IAM_DB_PASSWORD:-iam_password}
+  # Volume   : iam_postgres_data
   iam-postgres:
     image: postgres:15-alpine
     environment:
@@ -17,6 +29,13 @@ services:
       timeout: 5s
       retries: 5
 
+  # ─── PostgreSQL: Media Service ───────────────────────────────────────────
+  # Database : media_db
+  # Purpose  : Stores media metadata, upload records, and signed URL references
+  # Consumer : services/media-service, services/media-worker
+  # Host Port: 5434  (internal: 5432)
+  # Creds    : ${MEDIA_DB_USER:-media_admin} / ${MEDIA_DB_PASSWORD:-media_password}
+  # Volume   : media_postgres_data
   media-postgres:
     image: postgres:15-alpine
     environment:
@@ -33,6 +52,13 @@ services:
       timeout: 5s
       retries: 5
 
+  # ─── PostgreSQL: Social Service ──────────────────────────────────────────
+  # Database : social_db
+  # Purpose  : Stores posts, comments, reactions, follow graph, reels, videos
+  # Consumer : services/social-service
+  # Host Port: 5435  (internal: 5432)
+  # Creds    : ${SOCIAL_DB_USER:-social_admin} / ${SOCIAL_DB_PASSWORD:-social_password}
+  # Volume   : social_postgres_data
   social-postgres:
     image: postgres:15-alpine
     environment:
@@ -49,6 +75,14 @@ services:
       timeout: 5s
       retries: 5
 
+  # ─── PostgreSQL: Stories Service ─────────────────────────────────────────
+  # Database : stories_db
+  # Purpose  : Stores novels, chapters, authors, library shelves, reading
+  #            progress, ratings, coin wallet, payouts (55 models)
+  # Consumer : services/stories-service  (Prisma client-reading output)
+  # Host Port: 5436  (internal: 5432)
+  # Creds    : ${STORIES_DB_USER:-stories_admin} / ${STORIES_DB_PASSWORD:-stories_password}
+  # Volume   : stories_postgres_data
   stories-postgres:
     image: postgres:15-alpine
     environment:
@@ -65,6 +99,14 @@ services:
       timeout: 5s
       retries: 5
 
+  # ─── Redis ───────────────────────────────────────────────────────────────
+  # Purpose  : Cache, OTP storage, BullMQ job queues (media transcoding),
+  #            event bus (pub/sub), view-count flush buffer
+  # Consumers: iam-service, media-service, social-service, stories-service,
+  #            media-worker
+  # Host Port: 6379
+  # Password : ${REDIS_PASSWORD:-redis_password}
+  # Volume   : redis_data
   redis:
     image: redis:7-alpine
     command: redis-server --requirepass "${REDIS_PASSWORD:-redis_password}"
@@ -78,6 +120,13 @@ services:
       timeout: 5s
       retries: 5
 
+  # ─── MinIO (S3-compatible object storage) ────────────────────────────────
+  # Purpose  : Stores uploaded media files (images, videos, cover art, avatars)
+  # Consumers: media-service (upload/signed URL), media-worker (transcoding input/output)
+  # API Port : 9000   (S3-compatible endpoint)
+  # Console  : 9001   → http://localhost:9001
+  # Creds    : ${MINIO_ROOT_USER:-minioadmin} / ${MINIO_ROOT_PASSWORD:-minioadmin123}
+  # Volume   : minio_data
   minio:
     image: minio/minio
     ports:
@@ -95,7 +144,13 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─── Observability ──────────────────────────────────────────────────────────
+  # ─── Jaeger (Distributed Tracing) ────────────────────────────────────────
+  # Purpose  : Collects and displays OpenTelemetry traces from all services
+  # UI       : http://localhost:16686
+  # OTLP gRPC: 4317  (OTLP/gRPC collector)
+  # OTLP HTTP: 4318  (OTLP/HTTP collector — used by all services)
+  # Consumers: gateway, iam-service, media-service, social-service,
+  #            stories-service  (via OTEL_EXPORTER_OTLP_ENDPOINT)
   jaeger:
     image: jaegertracing/all-in-one:1.50
     ports:
@@ -110,7 +165,14 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─── Application Services ───────────────────────────────────────────────────
+  # ════════════════════════════════════════════════════════════════════════════
+  # BACKEND SERVICES — NestJS microservices
+  # ════════════════════════════════════════════════════════════════════════════
+
+  # ─── IAM Service (:3001) ────────────────────────────────────────────────
+  # Responsibility: Authentication, Identity, Sessions, MFA, RBAC
+  # DB: iam_db (iam-postgres:5432)
+  # Depends on: iam-postgres, redis, jaeger
   iam-service:
     build:
       context: ./services/iam-service
@@ -134,6 +196,10 @@ services:
       jaeger:
         condition: service_healthy
 
+  # ─── Media Service (:3003) ──────────────────────────────────────────────
+  # Responsibility: Media upload, metadata indexing, signed URLs, BullMQ dispatch
+  # DB: media_db (media-postgres:5432)
+  # Depends on: media-postgres, redis, minio, jaeger
   media-service:
     build:
       context: ./services/media-service
@@ -160,6 +226,10 @@ services:
       jaeger:
         condition: service_healthy
 
+  # ─── Social Service (:3004) ─────────────────────────────────────────────
+  # Responsibility: Posts, Comments, Reactions, Follow graph, Reels, Videos
+  # DB: social_db (social-postgres:5432)
+  # Depends on: social-postgres, redis, jaeger
   social-service:
     build:
       context: ./services/social-service
@@ -183,6 +253,11 @@ services:
       jaeger:
         condition: service_healthy
 
+  # ─── Stories Service (:3005) ────────────────────────────────────────────
+  # Responsibility: Novels, Chapters, Volumes, Genres, Library/Shelves,
+  #                 Reading progress, Reviews, Coin wallet, Author payouts
+  # DB: stories_db (stories-postgres:5432) via STORIES_DATABASE_URL
+  # Depends on: stories-postgres, redis, jaeger
   stories-service:
     build:
       context: ./services/stories-service
@@ -207,6 +282,10 @@ services:
       jaeger:
         condition: service_healthy
 
+  # ─── API Gateway (:3000) ────────────────────────────────────────────────
+  # Responsibility: Public edge router, rate limiting, JWT validation,
+  #                 request forwarding to all downstream services
+  # Depends on: iam-service, media-service, social-service, stories-service
   gateway:
     build:
       context: ./services/gateway
@@ -230,6 +309,11 @@ services:
       - social-service
       - stories-service
 
+  # ─── Media Worker (no exposed port) ─────────────────────────────────────
+  # Responsibility: Background FFmpeg transcoding, thumbnail generation,
+  #                 HLS packaging — consumes BullMQ jobs from Redis
+  # Language: Python  (services/media-worker/main.py)
+  # Depends on: redis, minio, media-service
   media-worker:
     build:
       context: ./services/media-worker
@@ -248,8 +332,13 @@ services:
       media-service:
         condition: service_started
 
-  # ─── Frontend Clients ───────────────────────────────────────────────────────
-  # IAM – SSO Auth & Fullsite Landing  →  http://localhost:4204
+  # ════════════════════════════════════════════════════════════════════════════
+  # FRONTEND CLIENTS — Angular 21 + Nx, served by nginx, proxy /api/ → gateway
+  # ════════════════════════════════════════════════════════════════════════════
+
+  # ─── IAM Web Client (:4204) ─────────────────────────────────────────────
+  # Responsibility: SSO Login/Register portal + Ecosystem showcase landing page
+  # Repo: frontend/iam-web-client
   fe-iam:
     build:
       context: ./frontend/iam-web-client
@@ -260,7 +349,9 @@ services:
     depends_on:
       - gateway
 
-  # Social – Feeds, Posts, Friends, Reels  →  http://localhost:4200
+  # ─── Social Web Client (:4200) ──────────────────────────────────────────
+  # Responsibility: Social feeds, posts, reels, stories, friends
+  # Repo: frontend/social-web-client
   fe-social:
     build:
       context: ./frontend/social-web-client
@@ -271,7 +362,9 @@ services:
     depends_on:
       - gateway
 
-  # Video – Watch, Reels, Media  →  http://localhost:4201
+  # ─── Video Web Client (:4201) ───────────────────────────────────────────
+  # Responsibility: Video & Reels player, HLS streaming, watch history
+  # Repo: frontend/video-web-client
   fe-video:
     build:
       context: ./frontend/video-web-client
@@ -282,7 +375,9 @@ services:
     depends_on:
       - gateway
 
-  # Shop – Storefront, Products, Cart  →  http://localhost:4202
+  # ─── Shop Web Client (:4202) ────────────────────────────────────────────
+  # Responsibility: E-commerce storefront, product listing, cart
+  # Repo: frontend/shop-web-client
   fe-shop:
     build:
       context: ./frontend/shop-web-client
@@ -293,7 +388,9 @@ services:
     depends_on:
       - gateway
 
-  # Stories – Reading, Collections, Publishing  →  http://localhost:4203
+  # ─── Stories Web Client (:4203) ─────────────────────────────────────────
+  # Responsibility: Novel reading, chapter view, author studio, library shelves
+  # Repo: frontend/stories-web-client
   fe-stories:
     build:
       context: ./frontend/stories-web-client
@@ -304,7 +401,9 @@ services:
     depends_on:
       - gateway
 
-  # Portfolio – Developer Portfolio (static)  →  http://localhost:4205
+  # ─── Portfolio Web Client (:4205) ───────────────────────────────────────
+  # Responsibility: Developer portfolio (static SPA, no gateway dependency)
+  # Repo: frontend/portfolio-web-client
   fe-portfolio:
     build:
       context: ./frontend/portfolio-web-client
@@ -313,6 +412,10 @@ services:
       - "4205:80"
     restart: unless-stopped
 
+# ════════════════════════════════════════════════════════════════════════════
+# NAMED VOLUMES — Persistent data; survives container restarts
+# Run `docker compose down -v` ONLY if you intend to wipe all local data.
+# ════════════════════════════════════════════════════════════════════════════
 volumes:
   iam_postgres_data:
   media_postgres_data:
