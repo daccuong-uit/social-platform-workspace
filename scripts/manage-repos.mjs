@@ -18,6 +18,7 @@ const allRepositories = [
   'services/media-service',
   'services/media-worker',
   'services/social-service',
+  'services/stories-service',
 ];
 
 const aliasMap = {
@@ -41,6 +42,7 @@ const aliasMap = {
   'media-service': 'services/media-service',
   'media-worker': 'services/media-worker',
   'social-service': 'services/social-service',
+  'stories-service': 'services/stories-service',
 };
 
 const args = process.argv.slice(2);

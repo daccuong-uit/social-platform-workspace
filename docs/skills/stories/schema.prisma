@@ -1,0 +1,1281 @@
+// ════════════════════════════════════════════════════════════════════
+//  reading-service — Prisma schema (web app truyện chữ)
+//  Database: reading_db   |   Output: node_modules/@prisma/client-reading
+//
+//  Quy ước:
+//   • Mọi id / userId dùng uuid (@db.Uuid). Nếu stories-service đang dùng cuid
+//     thì đổi lại cho khớp IAM.
+//   • FK tới UserProfile CHỈ khai báo ở bảng cần include thông tin user để hiển thị
+//     (Novel, Comment, Review, Announcement...). Các bảng volume lớn (history,
+//     progress, notification, ledger...) lưu userId thuần + index, vì UserProfile
+//     là projection đồng bộ qua event nên có thể đến trễ.
+//   • Soft delete (deletedAt) cho Novel, Chapter, Comment, Review, Announcement.
+//   • Counter "nóng" tách khỏi bảng catalog (NovelStats) để tránh row-lock
+//     và bloat khi update liên tục.
+//   • Target đa hình (Report, ModerationAction) không có FK — cố ý.
+// ════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../node_modules/@prisma/client-reading"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("READING_DATABASE_URL")
+  extensions = [pg_trgm]
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  ENUMS
+// ════════════════════════════════════════════════════════════════════
+
+enum UserRole {
+  READER
+  AUTHOR
+  EDITOR
+  MODERATOR
+  ADMIN
+}
+
+enum NovelStatus {
+  ONGOING
+  COMPLETED
+  HIATUS
+  DROPPED
+}
+
+// Vòng đời duyệt/xuất bản (tách khỏi visibility)
+enum PublishStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  REJECTED
+  TAKEN_DOWN
+}
+
+enum NovelVisibility {
+  PUBLIC
+  UNLISTED
+  PRIVATE
+}
+
+enum AgeRating {
+  ALL
+  TEEN
+  MATURE // 18+
+}
+
+enum NovelOrigin {
+  ORIGINAL
+  TRANSLATED
+  CONVERTED
+}
+
+enum ContributorRole {
+  CO_AUTHOR
+  TRANSLATOR
+  EDITOR
+  PROOFREADER
+  ILLUSTRATOR
+}
+
+enum ChapterStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+}
+
+enum ChapterAccess {
+  FREE
+  PAID
+}
+
+enum ContentFormat {
+  PLAIN
+  MARKDOWN
+}
+
+enum ReaderTheme {
+  SYSTEM
+  LIGHT
+  DARK
+  SEPIA
+}
+
+enum ShelfType {
+  READING
+  PLAN_TO_READ
+  COMPLETED
+  DROPPED
+  FAVORITES
+  CUSTOM
+}
+
+enum ReactionType {
+  LIKE
+  LOVE
+  HAHA
+  WOW
+  SAD
+  ANGRY
+}
+
+enum VoteType {
+  RECOMMEND // đề cử (quota theo ngày)
+  MONTHLY // nguyệt phiếu (quota theo tháng)
+}
+
+enum BadgeType {
+  HOT
+  FEATURED
+  EDITORS_PICK
+  NEW_RELEASE
+}
+
+enum CollectionKind {
+  EDITORIAL
+  HOME_SECTION
+}
+
+enum RankingMetric {
+  HOT
+  VIEWS
+  RECOMMEND_VOTES
+  MONTHLY_VOTES
+  RATING
+  FOLLOWS
+}
+
+enum RankingPeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
+  ALL_TIME
+}
+
+enum NotificationType {
+  NEW_CHAPTER
+  NOVEL_STATUS_CHANGED
+  NOVEL_APPROVED
+  NOVEL_REJECTED
+  COMMENT_REPLY
+  COMMENT_LIKE
+  COMMENT_MENTION
+  NEW_REVIEW
+  REVIEW_REPLY
+  REVIEW_HELPFUL
+  AUTHOR_ANNOUNCEMENT
+  DONATION_RECEIVED
+  TOPUP_SUCCEEDED
+  PAYOUT_UPDATED
+  IMPORT_FINISHED
+  SYSTEM
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  PUSH
+}
+
+enum ReportTargetType {
+  NOVEL
+  CHAPTER
+  COMMENT
+  REVIEW
+  USER
+}
+
+enum ReportReason {
+  SPAM
+  COPYRIGHT
+  SEXUAL_CONTENT
+  VIOLENCE
+  HATE_SPEECH
+  MISINFORMATION
+  WRONG_INFO
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum ModerationActionType {
+  HIDE
+  UNHIDE
+  DELETE
+  RESTORE
+  TAKEDOWN
+  APPROVE
+  REJECT
+  WARN
+  BAN_COMMENT
+}
+
+enum CoinTxType {
+  TOPUP
+  PURCHASE_CHAPTER
+  TIP
+  REFUND
+  BONUS
+  ADJUSTMENT
+}
+
+enum TopUpStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum EarningSource {
+  CHAPTER_SALE
+  TIP
+}
+
+enum EarningStatus {
+  PENDING
+  AVAILABLE
+  PAID_OUT
+  REVERSED
+}
+
+enum PayoutStatus {
+  REQUESTED
+  APPROVED
+  PAID
+  REJECTED
+}
+
+enum ImportJobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  1. USER & AUTHOR   (module: users, authors, follow)
+// ════════════════════════════════════════════════════════════════════
+
+// Projection từ IAM (event user.created.v1 / user.updated.v1)
+model UserProfile {
+  userId             String    @id @db.Uuid
+  username           String    @unique
+  displayName        String
+  avatarMediaId      String?   @db.Uuid
+  bio                String?   @db.VarChar(500)
+  role               UserRole  @default(READER)
+  isActive           Boolean   @default(true)
+  commentBannedUntil DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  authorProfile AuthorProfile?
+  settings      UserSettings?
+  readerPref    ReaderPreference?
+  ownedNovels   Novel[]            @relation("NovelOwner")
+  contributions NovelContributor[]
+  comments      Comment[]
+  reviews       NovelReview[]
+  announcements Announcement[]
+  following     AuthorFollow[]     @relation("AuthorFollower")
+  followers     AuthorFollow[]     @relation("AuthorFollowed")
+}
+
+model AuthorProfile {
+  userId         String   @id @db.Uuid
+  penName        String   @db.VarChar(100)
+  about          String?  @db.Text
+  website        String?
+  socialLinks    Json?
+  isVerified     Boolean  @default(false)
+  isContracted   Boolean  @default(false) // đã ký hợp đồng → được bán chương VIP
+  followerCount  Int      @default(0)
+  novelCount     Int      @default(0)
+  totalViewCount BigInt   @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user UserProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+}
+
+model UserSettings {
+  userId             String   @id @db.Uuid
+  language           String   @default("vi") @db.VarChar(10)
+  showMatureContent  Boolean  @default(false)
+  showReadingHistory Boolean  @default(false) // công khai lịch sử đọc
+  allowMentions      Boolean  @default(true)
+  emailDigest        Boolean  @default(false)
+  updatedAt          DateTime @updatedAt
+
+  user UserProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+}
+
+// Cấu hình giao diện đọc — đồng bộ đa thiết bị
+model ReaderPreference {
+  userId       String      @id @db.Uuid
+  fontFamily   String      @default("serif") @db.VarChar(50)
+  fontSize     Int         @default(18)
+  lineHeight   Float       @default(1.7)
+  contentWidth Int         @default(720)
+  theme        ReaderTheme @default(SYSTEM)
+  updatedAt    DateTime    @updatedAt
+
+  user UserProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+}
+
+model AuthorFollow {
+  followerId String   @db.Uuid
+  authorId   String   @db.Uuid
+  createdAt  DateTime @default(now())
+
+  follower UserProfile @relation("AuthorFollower", fields: [followerId], references: [userId], onDelete: Cascade)
+  author   UserProfile @relation("AuthorFollowed", fields: [authorId], references: [userId], onDelete: Cascade)
+
+  @@id([followerId, authorId])
+  @@index([authorId, createdAt(sort: Desc)])
+}
+
+// Chặn user (không nhận reply/mention, ẩn comment của họ)
+model UserBlock {
+  blockerId String   @db.Uuid
+  blockedId String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  @@id([blockerId, blockedId])
+  @@index([blockedId])
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  2. TAXONOMY   (module: genres)
+// ════════════════════════════════════════════════════════════════════
+
+model Genre {
+  id          String   @id @default(uuid()) @db.Uuid
+  slug        String   @unique @db.VarChar(100)
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(500)
+  iconMediaId String?  @db.Uuid
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  novelCount  Int      @default(0) // cập nhật theo batch job
+  createdAt   DateTime @default(now())
+
+  novels NovelGenre[]
+
+  @@index([isActive, sortOrder])
+}
+
+model Tag {
+  id         String   @id @default(uuid()) @db.Uuid
+  slug       String   @unique @db.VarChar(100)
+  name       String   @db.VarChar(100)
+  usageCount Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  novels NovelTag[]
+
+  @@index([usageCount(sort: Desc)])
+}
+
+model NovelGenre {
+  novelId   String  @db.Uuid
+  genreId   String  @db.Uuid
+  isPrimary Boolean @default(false)
+
+  novel Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  genre Genre @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([novelId, genreId])
+  @@index([genreId])
+}
+
+model NovelTag {
+  novelId String @db.Uuid
+  tagId   String @db.Uuid
+
+  novel Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  tag   Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([novelId, tagId])
+  @@index([tagId])
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  3. CATALOG   (module: novels, chapters)
+// ════════════════════════════════════════════════════════════════════
+
+model Novel {
+  id           String  @id @default(uuid()) @db.Uuid
+  slug         String  @unique @db.VarChar(200)
+  title        String  @db.VarChar(255)
+  altTitles    String[]
+  synopsis     String? @db.Text
+  coverMediaId String? @db.Uuid
+  ownerId      String  @db.Uuid
+
+  status        NovelStatus     @default(ONGOING)
+  publishStatus PublishStatus   @default(DRAFT)
+  visibility    NovelVisibility @default(PUBLIC)
+  ageRating     AgeRating       @default(ALL)
+  language      String          @default("vi") @db.VarChar(10)
+
+  // Truyện dịch / convert
+  origin             NovelOrigin @default(ORIGINAL)
+  originalTitle      String?     @db.VarChar(255)
+  originalAuthorName String?     @db.VarChar(150)
+  sourceNovelId      String?     @db.Uuid // bản dịch của truyện nào
+
+  monetizationEnabled Boolean @default(false)
+  nextChapterOrder    Int     @default(1) // cấp orderIndex bằng atomic increment
+
+  // Chuỗi đã bỏ dấu + lowercase (title + altTitles + penName) phục vụ tìm kiếm trgm
+  searchText String @default("")
+
+  publishedAt   DateTime?
+  lastChapterAt DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  owner        UserProfile @relation("NovelOwner", fields: [ownerId], references: [userId])
+  sourceNovel  Novel?      @relation("NovelTranslations", fields: [sourceNovelId], references: [id], onDelete: SetNull)
+  translations Novel[]     @relation("NovelTranslations")
+
+  stats           NovelStats?
+  contributors    NovelContributor[]
+  genres          NovelGenre[]
+  tags            NovelTag[]
+  volumes         Volume[]
+  chapters        Chapter[]
+  followers       NovelFollow[]
+  shelfItems      ShelfItem[]
+  progresses      ReadingProgress[]
+  reviews         NovelReview[]
+  comments        Comment[]
+  votes           NovelVote[]
+  badges          NovelBadge[]
+  collectionItems CollectionItem[]
+  similarSources  NovelSimilarity[]  @relation("SimilaritySource")
+  similarTargets  NovelSimilarity[]  @relation("SimilarityTarget")
+  rankings        RankingSnapshot[]
+  dailyStats      NovelStatDaily[]
+  announcements   Announcement[]
+  importJobs      ChapterImportJob[]
+
+  @@index([publishStatus, visibility, lastChapterAt(sort: Desc)])
+  @@index([publishStatus, visibility, publishedAt(sort: Desc)])
+  @@index([status, publishStatus, lastChapterAt(sort: Desc)])
+  @@index([ownerId, createdAt(sort: Desc)])
+  @@index([sourceNovelId])
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
+// Counter nóng — 1-1 với Novel
+model NovelStats {
+  novelId            String    @id @db.Uuid
+  viewCount          BigInt    @default(0)
+  followCount        Int       @default(0)
+  shelfCount         Int       @default(0)
+  chapterCount       Int       @default(0) // chỉ tính chương PUBLISHED
+  wordCount          BigInt    @default(0)
+  commentCount       Int       @default(0)
+  ratingCount        Int       @default(0)
+  ratingSum          Int       @default(0) // avg = sum / count, cập nhật theo delta
+  ratingAvg          Float     @default(0)
+  ratingScore        Float     @default(0) // điểm Bayesian dùng để xếp hạng
+  recommendVoteCount Int       @default(0)
+  monthlyVoteCount   Int       @default(0)
+  hotScore           Float     @default(0)
+  hotScoreUpdatedAt  DateTime?
+  updatedAt          DateTime  @updatedAt
+
+  novel Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@index([hotScore(sort: Desc)])
+  @@index([ratingScore(sort: Desc)])
+  @@index([viewCount(sort: Desc)])
+}
+
+// Đồng tác giả / dịch giả / biên tập. Chủ sở hữu = Novel.ownerId
+model NovelContributor {
+  novelId         String          @db.Uuid
+  userId          String          @db.Uuid
+  role            ContributorRole
+  canEditChapters Boolean         @default(true)
+  revenueShareBps Int             @default(0) // basis points (10000 = 100%)
+  createdAt       DateTime        @default(now())
+
+  novel Novel       @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  user  UserProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@id([novelId, userId])
+  @@index([userId])
+}
+
+// "Quyển"
+model Volume {
+  id         String   @id @default(uuid()) @db.Uuid
+  novelId    String   @db.Uuid
+  title      String   @db.VarChar(255)
+  orderIndex Int
+  createdAt  DateTime @default(now())
+
+  novel    Novel     @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  chapters Chapter[]
+
+  @@unique([novelId, orderIndex])
+}
+
+// Metadata chương — nhẹ, dùng cho danh sách mục lục
+model Chapter {
+  id            String        @id @default(uuid()) @db.Uuid
+  novelId       String        @db.Uuid
+  volumeId      String?       @db.Uuid
+  orderIndex    Int // khoá sắp xếp, cấp từ Novel.nextChapterOrder
+  chapterNumber Float // số hiển thị ("Chương 12.5")
+  title         String        @db.VarChar(255)
+  status        ChapterStatus @default(DRAFT)
+
+  accessType ChapterAccess @default(FREE)
+  priceCoins Int           @default(0)
+  freeAt     DateTime? // tự chuyển thành miễn phí sau thời điểm này
+
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  wordCount   Int       @default(0)
+  authorNote  String?   @db.VarChar(2000)
+
+  viewCount     Int @default(0)
+  commentCount  Int @default(0)
+  reactionCount Int @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  novel    Novel   @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  volume   Volume? @relation(fields: [volumeId], references: [id], onDelete: SetNull)
+
+  content       ChapterContent?
+  revisions     ChapterRevision[]
+  comments      Comment[]
+  reactions     ChapterReaction[]
+  history       ReadingHistory[]
+  lastReadBy    ReadingProgress[]
+  bookmarks     ChapterBookmark[]
+  unlocks       ChapterUnlock[]
+  dailyStats    ChapterStatDaily[]
+
+  @@unique([novelId, orderIndex])
+  @@index([novelId, status, orderIndex])
+  @@index([novelId, publishedAt(sort: Desc)])
+  @@index([status, scheduledAt])
+}
+
+// Nội dung tách bảng để list/join chương không kéo theo text lớn
+model ChapterContent {
+  chapterId   String        @id @db.Uuid
+  body        String        @db.Text
+  format      ContentFormat @default(PLAIN)
+  contentHash String?       @db.VarChar(64)
+  updatedAt   DateTime      @updatedAt
+
+  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+}
+
+model ChapterRevision {
+  id         String   @id @default(uuid()) @db.Uuid
+  chapterId  String   @db.Uuid
+  revisionNo Int
+  title      String   @db.VarChar(255)
+  body       String   @db.Text
+  editedById String   @db.Uuid
+  note       String?  @db.VarChar(255)
+  createdAt  DateTime @default(now())
+
+  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@unique([chapterId, revisionNo])
+}
+
+// Import hàng loạt chương từ file (txt / docx / epub / zip)
+model ChapterImportJob {
+  id               String          @id @default(uuid()) @db.Uuid
+  novelId          String          @db.Uuid
+  requestedById    String          @db.Uuid
+  sourceMediaId    String          @db.Uuid
+  status           ImportJobStatus @default(QUEUED)
+  totalChapters    Int             @default(0)
+  importedChapters Int             @default(0)
+  errors           Json?
+  createdAt        DateTime        @default(now())
+  startedAt        DateTime?
+  finishedAt       DateTime?
+
+  novel Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@index([novelId, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  4. READING & LIBRARY   (module: reading, library)
+// ════════════════════════════════════════════════════════════════════
+
+// Vị trí đọc gần nhất của mỗi user trên mỗi truyện ("đọc tiếp")
+model ReadingProgress {
+  userId         String   @db.Uuid
+  novelId        String   @db.Uuid
+  lastChapterId  String   @db.Uuid
+  scrollPercent  Float    @default(0)
+  paragraphIndex Int?
+  lastReadAt     DateTime @default(now())
+
+  novel       Novel   @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  lastChapter Chapter @relation(fields: [lastChapterId], references: [id], onDelete: Cascade)
+
+  @@id([userId, novelId])
+  @@index([userId, lastReadAt(sort: Desc)])
+  @@index([lastChapterId])
+}
+
+// Danh sách chương đã đọc — để đánh dấu "đã đọc" trong mục lục
+model ReadingHistory {
+  userId      String   @db.Uuid
+  chapterId   String   @db.Uuid
+  novelId     String   @db.Uuid // denormalized
+  isCompleted Boolean  @default(false)
+  firstReadAt DateTime @default(now())
+  lastReadAt  DateTime @default(now())
+
+  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@id([userId, chapterId])
+  @@index([userId, novelId])
+  @@index([userId, lastReadAt(sort: Desc)])
+}
+
+// Đánh dấu / highlight / ghi chú trong chương
+model ChapterBookmark {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @db.Uuid
+  novelId        String   @db.Uuid // denormalized
+  chapterId      String   @db.Uuid
+  paragraphIndex Int?
+  textQuote      String?  @db.VarChar(1000)
+  note           String?  @db.VarChar(1000)
+  color          String?  @db.VarChar(20)
+  createdAt      DateTime @default(now())
+
+  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, chapterId])
+}
+
+// Tủ sách: 5 shelf hệ thống (tạo lười khi cần) + shelf tuỳ chỉnh
+model Shelf {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
+  type        ShelfType
+  name        String    @db.VarChar(100)
+  description String?   @db.VarChar(500)
+  isPublic    Boolean   @default(false)
+  sortOrder   Int       @default(0)
+  itemCount   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  items ShelfItem[]
+
+  @@unique([userId, name])
+  @@index([userId, sortOrder])
+}
+
+model ShelfItem {
+  shelfId   String   @db.Uuid
+  novelId   String   @db.Uuid
+  sortOrder Int      @default(0)
+  addedAt   DateTime @default(now())
+
+  shelf Shelf @relation(fields: [shelfId], references: [id], onDelete: Cascade)
+  novel Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@id([shelfId, novelId])
+  @@index([novelId])
+  @@index([shelfId, addedAt(sort: Desc)])
+}
+
+// Đăng ký nhận thông báo chương mới
+model NovelFollow {
+  userId           String   @db.Uuid
+  novelId          String   @db.Uuid
+  notifyNewChapter Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  novel Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@id([userId, novelId])
+  @@index([novelId])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  5. COMMUNITY   (module: reviews, comments, reactions, votes)
+// ════════════════════════════════════════════════════════════════════
+
+model NovelReview {
+  id      String @id @default(uuid()) @db.Uuid
+  novelId String @db.Uuid
+  userId  String @db.Uuid
+
+  rating           Int     @db.SmallInt // 1–5 (CHECK trong migration SQL)
+  ratingPlot       Int?    @db.SmallInt
+  ratingCharacters Int?    @db.SmallInt
+  ratingWorld      Int?    @db.SmallInt
+  ratingWriting    Int?    @db.SmallInt
+  title            String? @db.VarChar(150)
+  content          String? @db.VarChar(5000)
+  containsSpoiler  Boolean @default(false)
+
+  helpfulCount    Int       @default(0)
+  isHidden        Boolean   @default(false)
+  authorReply     String?   @db.VarChar(2000)
+  authorRepliedAt DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // review lại sau khi xoá = restore đúng dòng này
+
+  novel        Novel               @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  user         UserProfile         @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  helpfulVotes ReviewHelpfulVote[]
+
+  @@unique([novelId, userId])
+  @@index([novelId, helpfulCount(sort: Desc)])
+  @@index([novelId, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+model ReviewHelpfulVote {
+  reviewId  String   @db.Uuid
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  review NovelReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@id([reviewId, userId])
+  @@index([userId])
+}
+
+// Bình luận truyện / chương / đoạn văn. Tối đa 2 cấp (reply luôn trỏ về comment cấp 1)
+//   chapterId = null                        → bình luận ở trang truyện
+//   chapterId != null, paragraphIndex null  → bình luận cuối chương
+//   chapterId != null, paragraphIndex != null → bình luận theo đoạn
+model Comment {
+  id             String  @id @default(uuid()) @db.Uuid
+  novelId        String  @db.Uuid
+  chapterId      String? @db.Uuid
+  paragraphIndex Int?
+  authorId       String  @db.Uuid
+  parentId       String? @db.Uuid
+
+  content         String  @db.VarChar(2000)
+  mentions        Json? // [{ userId, start, end }]
+  isSpoiler       Boolean @default(false)
+  isPinned        Boolean @default(false)
+  isHidden        Boolean @default(false)
+  likeCount       Int     @default(0)
+  replyCount      Int     @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  novel   Novel       @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  chapter Chapter?    @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  author  UserProfile @relation(fields: [authorId], references: [userId], onDelete: Cascade)
+  parent  Comment?    @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies Comment[]   @relation("CommentReplies")
+  likes   CommentLike[]
+
+  @@index([novelId, chapterId, parentId, createdAt(sort: Desc)])
+  @@index([chapterId, paragraphIndex])
+  @@index([parentId, createdAt(sort: Asc)])
+  @@index([authorId, createdAt(sort: Desc)])
+}
+
+model CommentLike {
+  commentId String   @db.Uuid
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@id([commentId, userId])
+  @@index([userId])
+}
+
+// Mỗi user 1 reaction / chương (đổi loại = update)
+model ChapterReaction {
+  chapterId String       @db.Uuid
+  userId    String       @db.Uuid
+  type      ReactionType
+  createdAt DateTime     @default(now())
+
+  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@id([chapterId, userId])
+  @@index([chapterId, type])
+}
+
+// Đề cử / nguyệt phiếu. periodKey: "YYYY-MM-DD" (RECOMMEND) hoặc "YYYY-MM" (MONTHLY)
+model NovelVote {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  novelId   String   @db.Uuid
+  type      VoteType
+  periodKey String   @db.VarChar(10)
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  novel Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, novelId, type, periodKey])
+  @@index([novelId, type, periodKey])
+  @@index([userId, type, periodKey])
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  6. DISCOVERY & RANKING   (module: discovery)
+// ════════════════════════════════════════════════════════════════════
+
+model NovelBadge {
+  id          String    @id @default(uuid()) @db.Uuid
+  novelId     String    @db.Uuid
+  type        BadgeType
+  startsAt    DateTime  @default(now())
+  endsAt      DateTime?
+  grantedById String?   @db.Uuid // null = hệ thống tự gắn
+  note        String?   @db.VarChar(255)
+  createdAt   DateTime  @default(now())
+
+  novel Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@index([type, startsAt, endsAt])
+  @@index([novelId])
+}
+
+// Danh sách biên tập / section trang chủ
+model Collection {
+  id           String         @id @default(uuid()) @db.Uuid
+  slug         String         @unique @db.VarChar(150)
+  title        String         @db.VarChar(200)
+  description  String?        @db.VarChar(1000)
+  coverMediaId String?        @db.Uuid
+  kind         CollectionKind @default(EDITORIAL)
+  isPublished  Boolean        @default(false)
+  sortOrder    Int            @default(0)
+  startsAt     DateTime?
+  endsAt       DateTime?
+  createdById  String         @db.Uuid
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  items CollectionItem[]
+
+  @@index([kind, isPublished, sortOrder])
+}
+
+model CollectionItem {
+  collectionId String @db.Uuid
+  novelId      String @db.Uuid
+  sortOrder    Int    @default(0)
+  blurb        String? @db.VarChar(500)
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  novel      Novel      @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, novelId])
+  @@index([novelId])
+}
+
+// Truyện tương tự — tính sẵn bằng job (thể loại/tag/đồng đọc giả)
+model NovelSimilarity {
+  novelId        String   @db.Uuid
+  similarNovelId String   @db.Uuid
+  score          Float
+  computedAt     DateTime @default(now())
+
+  novel        Novel @relation("SimilaritySource", fields: [novelId], references: [id], onDelete: Cascade)
+  similarNovel Novel @relation("SimilarityTarget", fields: [similarNovelId], references: [id], onDelete: Cascade)
+
+  @@id([novelId, similarNovelId])
+  @@index([novelId, score(sort: Desc)])
+  @@index([similarNovelId])
+}
+
+// Snapshot BXH (live ranking nằm ở Redis ZSET; bảng này để SEO/lịch sử)
+// periodKey: "2026-09-19" | "2026-W38" | "2026-09" | "all"
+model RankingSnapshot {
+  id        String        @id @default(uuid()) @db.Uuid
+  metric    RankingMetric
+  period    RankingPeriod
+  periodKey String        @db.VarChar(12)
+  rank      Int
+  novelId   String        @db.Uuid
+  score     Float
+  createdAt DateTime      @default(now())
+
+  novel Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@unique([metric, period, periodKey, rank])
+  @@index([novelId])
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  7. ANALYTICS   (module: analytics) — flush từ Redis theo batch
+// ════════════════════════════════════════════════════════════════════
+
+model NovelStatDaily {
+  novelId        String   @db.Uuid
+  date           DateTime @db.Date
+  views          Int      @default(0)
+  uniqueReaders  Int      @default(0)
+  newFollows     Int      @default(0)
+  newShelfAdds   Int      @default(0)
+  votes          Int      @default(0)
+  newComments    Int      @default(0)
+  newReviews     Int      @default(0)
+  chapterUnlocks Int      @default(0)
+  coinsEarned    Int      @default(0)
+
+  novel Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@id([novelId, date])
+  @@index([date])
+}
+
+model ChapterStatDaily {
+  chapterId      String   @db.Uuid
+  date           DateTime @db.Date
+  views          Int      @default(0)
+  uniqueReaders  Int      @default(0)
+  completedReads Int      @default(0)
+
+  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@id([chapterId, date])
+  @@index([date])
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  8. SEARCH   (module: search)
+// ════════════════════════════════════════════════════════════════════
+
+model SearchHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  query     String   @db.VarChar(200)
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+// Từ khoá hot + gợi ý autocomplete
+model SearchKeyword {
+  keyword        String   @id @db.VarChar(200) // đã chuẩn hoá (bỏ dấu, lowercase)
+  displayText    String   @db.VarChar(200)
+  searchCount    Int      @default(0)
+  isPinned       Boolean  @default(false)
+  isBlocked      Boolean  @default(false)
+  lastSearchedAt DateTime @default(now())
+
+  @@index([searchCount(sort: Desc)])
+  @@index([keyword(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  9. NOTIFICATIONS & ANNOUNCEMENTS   (module: notifications, announcements)
+// ════════════════════════════════════════════════════════════════════
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @db.Uuid
+  type      NotificationType
+  actorId   String?          @db.Uuid
+  novelId   String?          @db.Uuid
+  chapterId String?          @db.Uuid
+  commentId String?          @db.Uuid
+  data      Json?
+  dedupeKey String?          @db.VarChar(120)
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, isRead, createdAt(sort: Desc)])
+  @@index([createdAt])
+}
+
+model NotificationPreference {
+  userId  String              @db.Uuid
+  type    NotificationType
+  channel NotificationChannel
+  enabled Boolean             @default(true)
+
+  @@id([userId, type, channel])
+}
+
+model PushSubscription {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  userAgent  String?   @db.VarChar(255)
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@index([userId])
+}
+
+// novelId = null → thông báo toàn hệ thống (do ADMIN đăng)
+model Announcement {
+  id          String    @id @default(uuid()) @db.Uuid
+  novelId     String?   @db.Uuid
+  authorId    String    @db.Uuid
+  title       String    @db.VarChar(200)
+  content     String    @db.VarChar(5000)
+  isPinned    Boolean   @default(false)
+  publishedAt DateTime  @default(now())
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  novel  Novel?      @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  author UserProfile @relation(fields: [authorId], references: [userId], onDelete: Cascade)
+
+  @@index([novelId, isPinned, publishedAt(sort: Desc)])
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  10. MODERATION   (module: moderation)
+// ════════════════════════════════════════════════════════════════════
+
+model Report {
+  id           String           @id @default(uuid()) @db.Uuid
+  reporterId   String           @db.Uuid
+  targetType   ReportTargetType
+  targetId     String           @db.Uuid
+  novelId      String?          @db.Uuid // ngữ cảnh để lọc nhanh
+  reason       ReportReason
+  detail       String?          @db.VarChar(1000)
+  status       ReportStatus     @default(OPEN)
+  assignedToId String?          @db.Uuid
+  resolvedById String?          @db.Uuid
+  resolution   String?          @db.VarChar(1000)
+  resolvedAt   DateTime?
+  createdAt    DateTime         @default(now())
+
+  @@unique([reporterId, targetType, targetId])
+  @@index([status, createdAt])
+  @@index([targetType, targetId])
+  @@index([novelId])
+}
+
+model ModerationAction {
+  id          String               @id @default(uuid()) @db.Uuid
+  moderatorId String               @db.Uuid
+  targetType  ReportTargetType
+  targetId    String               @db.Uuid
+  action      ModerationActionType
+  reason      String?              @db.VarChar(1000)
+  reportId    String?              @db.Uuid
+  createdAt   DateTime             @default(now())
+
+  @@index([targetType, targetId, createdAt(sort: Desc)])
+  @@index([moderatorId, createdAt(sort: Desc)])
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  11. WALLET & MONETIZATION   (module: wallet, payments, earnings)
+//      Ledger bất biến: không UPDATE/DELETE WalletTransaction.
+// ════════════════════════════════════════════════════════════════════
+
+model Wallet {
+  userId        String   @id @db.Uuid
+  balance       Int      @default(0) // xu; không bao giờ < 0
+  lifetimeTopUp Int      @default(0)
+  lifetimeSpent Int      @default(0)
+  updatedAt     DateTime @updatedAt
+
+  transactions WalletTransaction[]
+}
+
+model WalletTransaction {
+  id             String     @id @default(uuid()) @db.Uuid
+  userId         String     @db.Uuid
+  type           CoinTxType
+  amount         Int // có dấu: + cộng xu, − trừ xu
+  balanceAfter   Int
+  refType        String?    @db.VarChar(30) // TOPUP_ORDER | CHAPTER | DONATION ...
+  refId          String?    @db.Uuid
+  idempotencyKey String     @unique @db.VarChar(120)
+  note           String?    @db.VarChar(255)
+  createdAt      DateTime   @default(now())
+
+  wallet Wallet @relation(fields: [userId], references: [userId])
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([refType, refId])
+}
+
+model TopUpPackage {
+  id         String  @id @default(uuid()) @db.Uuid
+  name       String  @db.VarChar(100)
+  coins      Int
+  bonusCoins Int     @default(0)
+  priceVnd   Int
+  isActive   Boolean @default(true)
+  sortOrder  Int     @default(0)
+
+  orders TopUpOrder[]
+}
+
+model TopUpOrder {
+  id            String      @id @default(uuid()) @db.Uuid
+  userId        String      @db.Uuid
+  packageId     String?     @db.Uuid
+  coins         Int
+  bonusCoins    Int         @default(0)
+  amountVnd     Int
+  provider      String      @db.VarChar(30) // VNPAY | MOMO | ZALOPAY | ...
+  providerTxnId String?     @db.VarChar(120)
+  status        TopUpStatus @default(PENDING)
+  paidAt        DateTime?
+  createdAt     DateTime    @default(now())
+
+  package TopUpPackage? @relation(fields: [packageId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, providerTxnId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+}
+
+// Quyền đọc chương VIP đã mở khoá
+model ChapterUnlock {
+  userId        String   @db.Uuid
+  chapterId     String   @db.Uuid
+  novelId       String   @db.Uuid // denormalized
+  priceCoins    Int
+  transactionId String?  @unique @db.Uuid
+  createdAt     DateTime @default(now())
+
+  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@id([userId, chapterId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([novelId, createdAt(sort: Desc)])
+}
+
+model Gift {
+  id          String  @id @default(uuid()) @db.Uuid
+  code        String  @unique @db.VarChar(50)
+  name        String  @db.VarChar(100)
+  iconMediaId String? @db.Uuid
+  priceCoins  Int
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  donations Donation[]
+}
+
+// Tặng quà / donate cho tác giả
+model Donation {
+  id            String   @id @default(uuid()) @db.Uuid
+  senderId      String   @db.Uuid
+  recipientId   String   @db.Uuid
+  novelId       String?  @db.Uuid
+  giftId        String?  @db.Uuid
+  amountCoins   Int
+  message       String?  @db.VarChar(500)
+  isAnonymous   Boolean  @default(false)
+  transactionId String?  @unique @db.Uuid
+  createdAt     DateTime @default(now())
+
+  gift Gift? @relation(fields: [giftId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, createdAt(sort: Desc)])
+  @@index([senderId, createdAt(sort: Desc)])
+  @@index([novelId, createdAt(sort: Desc)])
+}
+
+// Doanh thu ghi nhận cho tác giả / đồng tác giả (1 dòng / người thụ hưởng / giao dịch)
+model AuthorEarning {
+  id               String        @id @default(uuid()) @db.Uuid
+  beneficiaryId    String        @db.Uuid
+  novelId          String?       @db.Uuid
+  source           EarningSource
+  sourceRefId      String?       @db.Uuid
+  grossCoins       Int
+  platformFeeCoins Int
+  netCoins         Int
+  status           EarningStatus @default(PENDING)
+  availableAt      DateTime // hết thời gian giữ để chống hoàn/chargeback
+  payoutRequestId  String?       @db.Uuid
+  createdAt        DateTime      @default(now())
+
+  payout PayoutRequest? @relation(fields: [payoutRequestId], references: [id], onDelete: SetNull)
+
+  @@index([beneficiaryId, status, availableAt])
+  @@index([novelId, createdAt(sort: Desc)])
+  @@index([payoutRequestId])
+}
+
+model PayoutRequest {
+  id               String       @id @default(uuid()) @db.Uuid
+  authorId         String       @db.Uuid
+  coins            Int
+  amountVnd        Int
+  payoutAccountRef String       @db.VarChar(120) // tham chiếu tới nơi lưu thông tin nhận tiền đã mã hoá, KHÔNG lưu plaintext
+  status           PayoutStatus @default(REQUESTED)
+  requestedAt      DateTime     @default(now())
+  processedById    String?      @db.Uuid
+  processedAt      DateTime?
+  note             String?      @db.VarChar(500)
+
+  earnings AuthorEarning[]
+
+  @@index([authorId, requestedAt(sort: Desc)])
+  @@index([status, requestedAt])
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  12. INFRA   (common/events)
+// ════════════════════════════════════════════════════════════════════
+
+// Transactional outbox: ghi cùng transaction nghiệp vụ, relayer publish lên Redis Pub/Sub
+model OutboxEvent {
+  id          String    @id @default(uuid()) @db.Uuid
+  topic       String    @db.VarChar(100)
+  aggregateId String?   @db.Uuid
+  payload     Json
+  attempts    Int       @default(0)
+  createdAt   DateTime  @default(now())
+  publishedAt DateTime?
+
+  @@index([publishedAt, createdAt])
+}
