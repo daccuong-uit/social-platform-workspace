@@ -1,4 +1,4 @@
-# `reading-service` — Thiết kế lại Database & Modules cho Web App Truyện Chữ
+# `stories-service` — Thiết kế lại Database & Modules cho Web App Truyện Chữ
 
 > Đi kèm: `schema.prisma` (55 model, 30 enum). Tài liệu này giải thích cấu trúc, module, các quyết định thiết kế và cách chuyển dữ liệu từ `stories_db`.
 
@@ -10,7 +10,7 @@
 |---|---|
 | **Giữ nguyên** | NestJS 10 + Fastify, Prisma 5, PostgreSQL, Redis cache, Redis Pub/Sub event bus, auth qua `X-User-ID`, `MediaResolverService`, response shape + `buildPagination()`, Zod config, health/Swagger/OTEL, cấu trúc thư mục `src/{config,health,common,modules}`, prefix `/api/v1` |
 | **Bỏ** | `posts`, `reels`, `videos`, `groups`, `friendship`, `hashtags`, `profile` (legacy), `comments`/`reactions`/`bookmarks` kiểu social, `PrivacySettings`, `AccountSettings` |
-| **Thiết kế lại** | Toàn bộ schema (tách DB riêng `reading_db`) và toàn bộ `modules/` |
+| **Thiết kế lại** | Toàn bộ schema (tách DB riêng `stories-db`) và toàn bộ `modules/` |
 | **Thêm vào `common/`** | `RolesGuard` + `@Roles()`, `@OptionalUser()` (cho độc giả chưa đăng nhập), outbox relayer, helper Redis (view counter, quota), `slugify` / `normalize-text` |
 
 ---
@@ -439,13 +439,13 @@ Nếu request đến trước khi `user.created.v1` kịp xử lý, service upse
 | `UserProfile` | `UserProfile` | Chỉ những user có truyện hoặc hoạt động đọc; còn lại tự tạo khi phát sinh (lazy) |
 | `Notification`, `Comment`, mọi thứ social | — | Không chuyển. `Comment` cũ chỉ gắn `postId/reelId`, không có bình luận chương để chuyển |
 
-Kế hoạch triển khai: (1) dựng `reading-service` chạy song song, (2) chạy script migrate một lần và đối soát số lượng, (3) đóng băng ghi vào `novels` của `stories-service`, chạy migrate delta, (4) đổi route gateway `/novels*`, `/me/library` sang `reading-service`, giữ alias `/novels/me/library` trong một phiên bản, (5) gỡ module `novels` khỏi `stories-service` và dọn các `targetType = NOVEL/CHAPTER` ở `Reaction`/`Bookmark`.
+Kế hoạch triển khai: (1) dựng `stories-service` chạy song song, (2) chạy script migrate một lần và đối soát số lượng, (3) đóng băng ghi vào `novels` của `stories-service`, chạy migrate delta, (4) đổi route gateway `/novels*`, `/me/library` sang `stories-service`, giữ alias `/novels/me/library` trong một phiên bản, (5) gỡ module `novels` khỏi `stories-service` và dọn các `targetType = NOVEL/CHAPTER` ở `Reaction`/`Bookmark`.
 
 ---
 
 ## 10. Giả định cần xác nhận
 
-1. **Tên & hạ tầng**: `reading-service`, DB `reading_db`, biến `READING_DATABASE_URL`, port `3006` (3005 đang là `stories-service`).
+1. **Tên & hạ tầng**: `stories-service`, DB `stories-db`, biến `STORIES_DATABASE_URL`, port `3006` (3005 đang là `stories-service`).
 2. **Kiểu id**: schema dùng `uuid`. Nếu IAM/stories đang dùng `cuid`, đổi `@db.Uuid` + `@default(uuid())` cho khớp.
 3. **Role**: lấy từ IAM và đồng bộ vào `UserProfile.role` qua event (giữ nguyên hợp đồng gateway chỉ inject `X-User-ID`). Nếu IAM chưa phát event role, cần bổ sung hoặc cho gateway inject thêm `X-User-Roles`.
 4. **Độc giả ẩn danh**: gateway phải cho phép các `GET` công khai đi qua **không** có `X-User-ID` và forward `X-Forwarded-For`.

@@ -9,8 +9,8 @@ Tập hợp tài liệu thiết kế và snapshot kiến trúc chi tiết của 
 ```mermaid
 flowchart TD
     subgraph "Clients Layer (Frontend)"
-        FE["iam-web-client (:4204)<br/>Angular 21 + Nx Monorepo + Zoneless"]
-        OtherFE["Other Web Clients<br/>Social (:4200), Video (:4201), Shop (:4202)"]
+        FE["iam-web-client (:4200)<br/>Angular 21 + Nx Monorepo + Zoneless"]
+        OtherFE["Other Web Clients<br/>Social (:4201), Video (:4202), Shop (:4203)"]
     end
 
     subgraph "Edge / Traffic Layer"
@@ -19,7 +19,7 @@ flowchart TD
 
     subgraph "Core Microservices (Backend)"
         IAM["iam-service (:3001)<br/>NestJS 10 + Fastify + Prisma + PostgreSQL"]
-        Social["social-service (:3004)<br/>Posts, Comments, Social Graphs"]
+        Social["social-service (:3002)<br/>Posts, Comments, Social Graphs"]
         Media["media-service (:3003)<br/>Uploads, Storage, Transcoding"]
     end
 

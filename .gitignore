@@ -22,4 +22,5 @@ services/stories-service/
 frontend/social-web-client/
 
 .npmrc
+.pnpm-store/
 

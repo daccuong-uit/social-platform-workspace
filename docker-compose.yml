@@ -1,4 +1,3 @@
-
 services:
   # ════════════════════════════════════════════════════════════════════════════
   # INFRASTRUCTURE — Persistent data stores, cache, object storage, tracing
@@ -10,7 +9,7 @@ services:
   # Database : iam_db
   # Purpose  : Stores users, sessions, tokens, MFA, roles, and permissions
   # Consumer : services/iam-service
-  # Host Port: 5433  (internal: 5432)
+  # Host Port: 5432  (internal: 5432)
   # Creds    : ${IAM_DB_USER:-iam_admin} / ${IAM_DB_PASSWORD:-iam_password}
   # Volume   : iam_postgres_data
   iam-postgres:
@@ -20,11 +19,11 @@ services:
       POSTGRES_PASSWORD: ${IAM_DB_PASSWORD:-iam_password}
       POSTGRES_DB: ${IAM_DB_NAME:-iam_db}
     ports:
-      - "5433:5432"
+      - "5432:5432"
     volumes:
       - iam_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${IAM_DB_USER:-iam_admin} -d ${IAM_DB_NAME:-iam_db}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${IAM_DB_USER:-iam_admin} -d ${IAM_DB_NAME:-iam_db}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -47,7 +46,7 @@ services:
     volumes:
       - media_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${MEDIA_DB_USER:-media_admin} -d ${MEDIA_DB_NAME:-media_db}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${MEDIA_DB_USER:-media_admin} -d ${MEDIA_DB_NAME:-media_db}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -56,7 +55,7 @@ services:
   # Database : social_db
   # Purpose  : Stores posts, comments, reactions, follow graph, reels, videos
   # Consumer : services/social-service
-  # Host Port: 5435  (internal: 5432)
+  # Host Port: 5433  (internal: 5432)
   # Creds    : ${SOCIAL_DB_USER:-social_admin} / ${SOCIAL_DB_PASSWORD:-social_password}
   # Volume   : social_postgres_data
   social-postgres:
@@ -66,11 +65,11 @@ services:
       POSTGRES_PASSWORD: ${SOCIAL_DB_PASSWORD:-social_password}
       POSTGRES_DB: ${SOCIAL_DB_NAME:-social_db}
     ports:
-      - "5435:5432"
+      - "5433:5432"
     volumes:
       - social_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${SOCIAL_DB_USER:-social_admin} -d ${SOCIAL_DB_NAME:-social_db}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${SOCIAL_DB_USER:-social_admin} -d ${SOCIAL_DB_NAME:-social_db}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -80,7 +79,7 @@ services:
   # Purpose  : Stores novels, chapters, authors, library shelves, reading
   #            progress, ratings, coin wallet, payouts (55 models)
   # Consumer : services/stories-service  (Prisma client-reading output)
-  # Host Port: 5436  (internal: 5432)
+  # Host Port: 5435  (internal: 5432)
   # Creds    : ${STORIES_DB_USER:-stories_admin} / ${STORIES_DB_PASSWORD:-stories_password}
   # Volume   : stories_postgres_data
   stories-postgres:
@@ -90,11 +89,11 @@ services:
       POSTGRES_PASSWORD: ${STORIES_DB_PASSWORD:-stories_password}
       POSTGRES_DB: ${STORIES_DB_NAME:-stories_db}
     ports:
-      - "5436:5432"
+      - "5435:5432"
     volumes:
       - stories_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${STORIES_DB_USER:-stories_admin} -d ${STORIES_DB_NAME:-stories_db}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${STORIES_DB_USER:-stories_admin} -d ${STORIES_DB_NAME:-stories_db}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -115,7 +114,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_password}", "ping"]
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_password}", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -139,7 +138,7 @@ services:
       - minio_data:/data
     command: server /data --console-address ":9001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -160,7 +159,7 @@ services:
     environment:
       - COLLECTOR_OTLP_ENABLED=true
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:16686"]
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:16686" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -226,7 +225,7 @@ services:
       jaeger:
         condition: service_healthy
 
-  # ─── Social Service (:3004) ─────────────────────────────────────────────
+  # ─── Social Service (:3002) ─────────────────────────────────────────────
   # Responsibility: Posts, Comments, Reactions, Follow graph, Reels, Videos
   # DB: social_db (social-postgres:5432)
   # Depends on: social-postgres, redis, jaeger
@@ -243,7 +242,7 @@ services:
       MEDIA_SERVICE_URL: http://media-service:3003/api/v1
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
-      - "3004:3004"
+      - "3002:3002"
     restart: unless-stopped
     depends_on:
       social-postgres:
@@ -253,7 +252,7 @@ services:
       jaeger:
         condition: service_healthy
 
-  # ─── Stories Service (:3005) ────────────────────────────────────────────
+  # ─── Stories Service (:3004) ────────────────────────────────────────────
   # Responsibility: Novels, Chapters, Volumes, Genres, Library/Shelves,
   #                 Reading progress, Reviews, Coin wallet, Author payouts
   # DB: stories_db (stories-postgres:5432) via STORIES_DATABASE_URL
@@ -267,12 +266,11 @@ services:
     env_file: ./services/stories-service/.env.example
     environment:
       STORIES_DATABASE_URL: postgresql://${STORIES_DB_USER:-stories_admin}:${STORIES_DB_PASSWORD:-stories_password}@stories-postgres:5432/${STORIES_DB_NAME:-stories_db}?schema=public
-      READING_DATABASE_URL: postgresql://${STORIES_DB_USER:-stories_admin}:${STORIES_DB_PASSWORD:-stories_password}@stories-postgres:5432/${STORIES_DB_NAME:-stories_db}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379
       MEDIA_SERVICE_URL: http://media-service:3003/api/v1
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
-      - "3005:3005"
+      - "3004:3004"
     restart: unless-stopped
     depends_on:
       stories-postgres:
@@ -295,9 +293,9 @@ services:
     env_file: ./services/gateway/.env.example
     environment:
       IAM_SERVICE_URL: http://iam-service:3001/api/v1
+      SOCIAL_SERVICE_URL: http://social-service:3002/api/v1
       MEDIA_SERVICE_URL: http://media-service:3003/api/v1
-      SOCIAL_SERVICE_URL: http://social-service:3004/api/v1
-      STORIES_SERVICE_URL: http://stories-service:3005/api/v1
+      STORIES_SERVICE_URL: http://stories-service:3004/api/v1
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-local_shared_access_secret_change_me_32_chars}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
@@ -336,7 +334,7 @@ services:
   # FRONTEND CLIENTS — Angular 21 + Nx, served by nginx, proxy /api/ → gateway
   # ════════════════════════════════════════════════════════════════════════════
 
-  # ─── IAM Web Client (:4204) ─────────────────────────────────────────────
+  # ─── IAM Web Client (:4200) ─────────────────────────────────────────────
   # Responsibility: SSO Login/Register portal + Ecosystem showcase landing page
   # Repo: frontend/iam-web-client
   fe-iam:
@@ -344,12 +342,12 @@ services:
       context: ./frontend/iam-web-client
       dockerfile: Dockerfile
     ports:
-      - "4204:80"
+      - "4200:80"
     restart: unless-stopped
     depends_on:
       - gateway
 
-  # ─── Social Web Client (:4200) ──────────────────────────────────────────
+  # ─── Social Web Client (:4201) ──────────────────────────────────────────
   # Responsibility: Social feeds, posts, reels, stories, friends
   # Repo: frontend/social-web-client
   fe-social:
@@ -357,12 +355,12 @@ services:
       context: ./frontend/social-web-client
       dockerfile: Dockerfile
     ports:
-      - "4200:80"
+      - "4201:80"
     restart: unless-stopped
     depends_on:
       - gateway
 
-  # ─── Video Web Client (:4201) ───────────────────────────────────────────
+  # ─── Video Web Client (:4202) ───────────────────────────────────────────
   # Responsibility: Video & Reels player, HLS streaming, watch history
   # Repo: frontend/video-web-client
   fe-video:
@@ -370,12 +368,12 @@ services:
       context: ./frontend/video-web-client
       dockerfile: Dockerfile
     ports:
-      - "4201:80"
+      - "4202:80"
     restart: unless-stopped
     depends_on:
       - gateway
 
-  # ─── Shop Web Client (:4202) ────────────────────────────────────────────
+  # ─── Shop Web Client (:4203) ────────────────────────────────────────────
   # Responsibility: E-commerce storefront, product listing, cart
   # Repo: frontend/shop-web-client
   fe-shop:
@@ -383,12 +381,12 @@ services:
       context: ./frontend/shop-web-client
       dockerfile: Dockerfile
     ports:
-      - "4202:80"
+      - "4203:80"
     restart: unless-stopped
     depends_on:
       - gateway
 
-  # ─── Stories Web Client (:4203) ─────────────────────────────────────────
+  # ─── Stories Web Client (:4204) ─────────────────────────────────────────
   # Responsibility: Novel reading, chapter view, author studio, library shelves
   # Repo: frontend/stories-web-client
   fe-stories:
@@ -396,7 +394,7 @@ services:
       context: ./frontend/stories-web-client
       dockerfile: Dockerfile
     ports:
-      - "4203:80"
+      - "4204:80"
     restart: unless-stopped
     depends_on:
       - gateway

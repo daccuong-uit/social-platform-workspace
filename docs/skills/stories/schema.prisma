@@ -23,7 +23,7 @@ generator client {
 
 datasource db {
   provider   = "postgresql"
-  url        = env("READING_DATABASE_URL")
+  url        = env("STORIES_DATABASE_URL")
   extensions = [pg_trgm]
 }
 

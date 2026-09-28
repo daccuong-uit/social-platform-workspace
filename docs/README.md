@@ -54,7 +54,7 @@ Toàn bộ hạ tầng phụ trợ (Databases, Redis, MinIO, Jaeger) đã đư�
 ### Bước 1: Khởi động Hạ tầng Docker
 ```bash
 # Khởi động toàn bộ cơ sở dữ liệu, Redis và Storage
-docker compose up -d iam-postgres media-postgres social-postgres stories-postgres redis minio jaeger
+docker compose up -d iam-postgres social-postgres media-postgres stories-postgres redis minio jaeger
 ```
 
 ### Bước 2: Chuẩn bị Biến Môi Trường (Environment Variables)
@@ -95,19 +95,19 @@ npm run start:dev
 |---|---|---|---|
 | **API Gateway** | Backend | `3000` | Edge Router công khai cho toàn hệ thống |
 | **IAM Service** | Backend | `3001` | Dịch vụ định danh, xác thực & phân quyền |
+| **Social Service** | Backend | `3002` | Dịch vụ mạng xã hội, bài viết & tương tác |
 | **Media Service** | Backend | `3003` | Dịch vụ xử lý & lưu trữ file |
-| **Social Service** | Backend | `3004` | Dịch vụ mạng xã hội, bài viết & tương tác |
-| **Stories Service** | Backend | `3005` | Nền tảng đọc truyện chữ / tiểu thuyết |
-| **IAM Web Client** | Frontend | `4204` | SSO Portal & Ecosystem Showcase |
-| **Social Web Client** | Frontend | `4200` | Giao diện mạng xã hội |
-| **Video Web Client** | Frontend | `4201` | Giao diện xem video / reels |
-| **Shop Web Client** | Frontend | `4202` | Giao diện thương mại điện tử |
-| **Stories Web Client** | Frontend | `4203` | Giao diện đọc truyện & Studio tác giả |
+| **Stories Service** | Backend | `3004` | Nền tảng đọc truyện chữ / tiểu thuyết |
+| **IAM Web Client** | Frontend | `4200` | SSO Portal & Ecosystem Showcase |
+| **Social Web Client** | Frontend | `4201` | Giao diện mạng xã hội |
+| **Video Web Client** | Frontend | `4202` | Giao diện xem video / reels |
+| **Shop Web Client** | Frontend | `4203` | Giao diện thương mại điện tử |
+| **Stories Web Client** | Frontend | `4204` | Giao diện đọc truyện & Studio tác giả |
 | **Portfolio Client** | Frontend | `4205` | Trang portfolio cá nhân |
-| **IAM PostgreSQL** | Infrastructure | `5433` | Database `iam_db` |
+| **IAM PostgreSQL** | Infrastructure | `5432` | Database `iam_db` |
+| **Social PostgreSQL** | Infrastructure | `5433` | Database `social_db` |
 | **Media PostgreSQL** | Infrastructure | `5434` | Database `media_db` |
-| **Social PostgreSQL** | Infrastructure | `5435` | Database `social_db` |
-| **Stories PostgreSQL** | Infrastructure | `5436` | Database `stories_db` |
+| **Stories PostgreSQL** | Infrastructure | `5435` | Database `stories_db` |
 | **Redis** | Infrastructure | `6379` | Cache, Pub/Sub EventBus, OTP |
 | **MinIO S3 API / Console**| Infrastructure | `9000` / `9001` | Object storage cho media & ảnh bìa |
 | **Jaeger Tracing** | Infrastructure | `16686` | Dashboard truy vết OpenTelemetry |
