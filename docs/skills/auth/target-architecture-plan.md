@@ -1,150 +1,91 @@
-# Reals Platform — Định hướng công nghệ và kiến trúc (v5)
+# Reals Platform — Định hướng công nghệ và kiến trúc SSO & Nền tảng (v5 - Chuẩn hóa)
 
-**Date:** 2026-09-19 · **Status:** Proposed
-**Loại tài liệu:** định hướng, không phải kế hoạch triển khai. Người soạn **chưa đọc code của các repo**. Agent đọc repo, đối chiếu với tài liệu này rồi tự lập kế hoạch chi tiết.
-
----
-
-## 1. Cách dùng tài liệu này
-
-| Nhãn | Ý nghĩa với agent |
-|---|---|
-| **BẮT BUỘC** | Ràng buộc của định hướng. Nếu repo thực tế mâu thuẫn hoặc không làm được, **dừng và báo lại**, không tự đổi hướng |
-| **ƯU TIÊN** | Lựa chọn mặc định. Agent được đổi nếu có lý do cụ thể từ repo hoặc từ tài liệu chính thức, và phải ghi rõ lý do |
-| **AGENT QUYẾT** | Tài liệu cố ý không quy định. Agent quyết dựa trên code thực tế |
-
-Các file trong `reference/` là bản phân tích chi tiết cũ, chỉ để tham khảo ý tưởng. **Không coi là yêu cầu**, và chúng đã bị thay bởi tài liệu này khi có khác biệt.
+> **Mục tiêu tài liệu:** Định hướng kiến trúc SSO, hạ tầng và chuẩn hóa công nghệ cho hệ sinh thái `social-platform-workspace`.  
+> **Trạng thái:** Đã tinh chỉnh đồng bộ 100% với bộ 3 tài liệu kiến trúc nền tảng:
+> 1. [01. Kế hoạch Platform Backend (NestJS + PostgreSQL)](file:///d:/social-platform-workspace/.architecture/01.%20K%E1%BA%BF%20ho%E1%BA%A1ch%20Platform%20Backend%20%28NestJS%20+%20PostgreSQL%29.md)
+> 2. [02. Kế hoạch Platform Frontend & Unified Design System (Angular + Tailwind v4)](file:///d:/social-platform-workspace/.architecture/02.%20K%E1%BA%BF%20ho%E1%BA%A1ch%20Platform%20Frontend%20&%20Unified%20Design%20System%20%28Angular%20+%20Tailwind%20v4%29.md)
+> 3. [03. Kế hoạch Shared Contracts & Protocols (Cross-Platform FE & BE)](file:///d:/social-platform-workspace/.architecture/03.%20K%E1%BA%BF%20ho%E1%BA%A1ch%20Shared%20Contracts%20&%20Protocols%20%28Cross-Platform%20FE%20&%20BE%29.md)
 
 ---
 
-## 2. Bối cảnh và mục tiêu
+## 1. Bối cảnh & Tối giản Hạ tầng (Anti Over-Engineering)
 
-- Hệ thống gồm 4 app domain (social, video, shop, stories), portfolio, iam-web-client, iam-service, gateway và các backend service khác. **Mỗi client và service là một repo riêng, một Dockerfile riêng.**
-- Quy mô hiện tại khoảng **10k người dùng**. Chạy trên hạ tầng sẵn có hoặc miễn phí, tự vận hành, tối giản.
-- Mục tiêu: các thành phần chạy trơn tru trên công nghệ hiện đại, có SSO, không để token ở trình duyệt, dễ thêm service/tính năng mới, và **mở rộng lên quy mô lớn hơn bằng cách thay thành phần chứ không thiết kế lại**.
-- Chưa triển khai hạ tầng cho 100k hay 1M user.
+- Hệ sinh thái gồm **6 ứng dụng frontend** (`fe-iam`, `fe-social`, `fe-video`, `fe-shop`, `fe-stories`, `fe-portfolio`) và **6 microservices/workers** (`gateway`, `iam-service`, `social-service`, `media-service`, `stories-service`, `media-worker`).
+- **Tối giản hạ tầng (Không tạo repo `infra` hay `keycloak` riêng biệt):**
+  - Toàn bộ điều phối hạ tầng (Docker Compose, cấu hình Caddy, khởi tạo PostgreSQL, cấu hình realm Keycloak) nằm trực tiếp tại thư mục gốc **`social-platform-workspace`** (`docker-compose.yml`, `.env`, thư mục `scripts/` và `infra/`).
+  - Tránh tuyệt đối việc phân mảnh tạo thêm các repo rời rạc gây phức tạp hóa quy trình CI/CD và quản lý.
+- Quy mô mục tiêu: Phục vụ trơn tru từ 10k đến 50k người dùng, mở rộng bằng cách thay thế thành phần bên dưới các abstraction interface chứ không thiết kế lại từ đầu.
 
 ---
 
-## 3. Định hướng công nghệ
+## 2. Định hướng Công nghệ Cốt lõi
 
-| Lĩnh vực | Hướng | Mức | Ghi chú |
+| Lĩnh vực | Hướng giải pháp | Mức độ | Ghi chú & Ràng buộc |
 |---|---|---|---|
-| Identity Provider | **Keycloak** (OIDC/OAuth 2.0 chuẩn) thay phần tự viết trong iam-service | BẮT BUỘC | Chỉ dùng chuẩn OIDC. Không viết SPI riêng cho logic nghiệp vụ. Cấu hình realm/client là code |
-| Auth cho web | **BFF nằm trong gateway** (mô hình khuyến nghị của RFC 10017). Token ở server, trình duyệt chỉ có cookie phiên | BẮT BUỘC | Xóa token khỏi LocalStorage/JS |
-| SSO | Mỗi app là một OIDC client; SSO đến từ phiên Keycloak. Đăng xuất một nơi thoát mọi app (back-channel logout) | BẮT BUỘC | Không chia sẻ token/cookie giữa app |
-| Xác thực ở service | Mỗi service tự verify JWT bằng JWKS của Keycloak | BẮT BUỘC | Không tin "đã qua gateway" |
-| Phân quyền | Role từ Keycloak + kiểm tra quyền sở hữu trong từng service | ƯU TIÊN | Chưa cần engine phân quyền riêng |
-| Cách đăng nhập | Password, Google, Apple, **Passkey**, **TOTP** là cấu hình Keycloak. SMS OTP chỉ là fallback, để sau | BẮT BUỘC (thứ tự ưu tiên) | Không phụ thuộc nhà cung cấp SMS |
-| Event giữa service | **Redis Streams** + Transactional Outbox/Inbox, sau một interface `EventBus` | BẮT BUỘC dùng Redis; chi tiết AGENT QUYẾT | Thay Pub/Sub hiện tại (không bền) |
-| Job nền | **BullMQ** trên Redis | ƯU TIÊN | |
-| Cơ sở dữ liệu | PostgreSQL, mỗi service một database và user riêng | BẮT BUỘC | Không truy vấn chéo DB |
-| Object storage | Chỉ dùng **S3 API** qua một lớp trừu tượng. Tự host bằng SeaweedFS (hoặc Garage), hoặc dịch vụ S3-compatible có gói miễn phí | ƯU TIÊN | **Không dùng MinIO cho hệ thống mới** (repo community đã bị archive năm 2026) |
-| Upload media | Upload trực tiếp lên object storage bằng presigned URL, không stream qua gateway | ƯU TIÊN | Làm khi app video/stories cần |
-| Edge | Caddy làm reverse proxy, định tuyến theo host, TLS tự động. `/api/*` của mọi app đi về gateway, cùng origin với app | ƯU TIÊN | Để các repo app chỉ là static, độc lập nhau |
-| Triển khai | Docker Compose trên 1 VM; mỗi repo build image, đẩy GHCR; repo `infra` giữ cấu hình chạy | ƯU TIÊN | Không cần Kubernetes ở giai đoạn này |
-| CI/CD | GitHub Actions cho từng repo; Renovate cập nhật package/tag | ƯU TIÊN | |
-| Backup | Backup PostgreSQL định kỳ **ra ngoài VM** (khác nhà cung cấp) và **thử restore** | BẮT BUỘC | IAM mất là mất toàn hệ thống |
-| Bí mật | Mã hóa secrets trong `infra` (ví dụ SOPS + age); không secret trong image/repo dạng rõ | BẮT BUỘC | |
-| Stack | Node 24 LTS, NestJS 11, Angular 21, PostgreSQL 18, Keycloak 26.x, Redis 8.x hoặc Valkey | ƯU TIÊN | Agent kiểm tra tương thích với repo trước khi nâng |
-| Quan sát | Giữ logger/tracing trong `platform`; giám sát uptime nhẹ; bật telemetry sâu khi cần | ƯU TIÊN | |
-| Response API | Giữ envelope hiện tại của gateway | ƯU TIÊN | Không đổi hàng loạt frontend chỉ vì chuẩn |
+| **Identity Provider** | **Keycloak 26.x** (OIDC/OAuth 2.0 chuẩn) thay thế hoàn toàn auth tự viết trong `iam-service` | **BẮT BUỘC** | Chỉ dùng chuẩn OIDC. Cấu hình realm và clients dạng code/JSON import trong Compose. |
+| **Auth cho Web** | **BFF nằm trong Gateway** (Mô hình RFC 10017). Token ở server, trình duyệt chỉ có cookie phiên | **BẮT BUỘC** | **Xóa sạch token khỏi LocalStorage/JS.** Tuyệt đối không để trình duyệt cầm access/refresh token. |
+| **SSO Đa App** | Mỗi frontend là một OIDC client trong Keycloak; SSO đến từ phiên Keycloak | **BẮT BUỘC** | Không chia sẻ token giữa các app. Đăng xuất một nơi kích hoạt **Back-Channel Logout** thoát toàn bộ 6 app. |
+| **Xác thực ở Service** | Mỗi service tự verify JWT bằng JWKS của Keycloak qua `@daccuong-uit/backend-auth` | **BẮT BUỘC** | Không tin tưởng mù quáng header từ Gateway. Khóa người dùng duy nhất là **`sub` (UUID)**. |
+| **Phân quyền** | Role từ Keycloak (`realm_access`, `resource_access`) + Resource ownership check trong service | **ƯU TIÊN** | Chưa cần engine phân quyền phức tạp (như OpenFGA). |
+| **Phương thức Đăng nhập** | Password, Passkey, TOTP, Google, Apple (cấu hình trong Keycloak). SMS OTP chỉ là fallback | **BẮT BUỘC** | Tận dụng sẵn màn hình đăng nhập của Keycloak (Login Theme). |
+| **Thư viện Backend** | Monorepo **`platform-backend`** (`@daccuong-uit/backend-*`) | **BẮT BUỘC** | Cung cấp auth, telemetry, database, http, event-bus, audit, testkit cho các backend microservice. |
+| **Thư viện Frontend** | Monorepo **`platform-frontend`** (`@daccuong-uit/ui` + `@daccuong-uit/frontend-core`) | **BẮT BUỘC** | Thay thế ý tưởng `web-kit`. Cung cấp Unified Design System (Outfit, 4px grid, components) & BFF AuthClient. |
+| **Hợp đồng dữ liệu** | Gói **`@daccuong-uit/contracts`** | **BẮT BUỘC** | Zero runtime dependencies, Zod schemas, RFC 9457 error codes, CloudEvents, pagination. |
+| **Event giữa Service** | **Redis Streams + Transactional Outbox/Inbox** sau interface `EventBus` | **BẮT BUỘC** | Nâng cấp từ Pub/Sub (vốn không có độ bền) sang Streams để đảm bảo giao ít nhất một lần. |
+| **Cơ sở dữ liệu** | **PostgreSQL 15/16 + Prisma ORM** (Database-per-service) | **BẮT BUỘC** | `iam_db`, `social_db`, `media_db`, `stories_db` độc lập, không truy vấn chéo DB. |
+| **Object Storage** | S3 API (SeaweedFS / MinIO / Garage / Cloud S3) qua presigned URLs | **ƯU TIÊN** | Upload trực tiếp từ client lên S3 qua presigned URL, không stream qua Gateway. |
+| **Edge Routing** | Caddy reverse proxy; route `/api/*` của mọi app đi về Gateway, cùng origin với app | **ƯU TIÊN** | Cho phép cookie phiên hoạt động mượt mà và an toàn giữa các domain app. |
 
 ---
 
-## 4. Nguyên tắc bất biến
+## 3. Các Nguyên tắc Bất biến
 
-1. **Không tự viết xác thực.** Đăng ký, đăng nhập, mật khẩu, MFA, phiên và refresh token thuộc Keycloak.
-2. **Trình duyệt không bao giờ cầm access/refresh token.**
-3. **`sub` của Keycloak là khóa người dùng duy nhất** ở mọi service. Khi migrate, giữ nguyên UUID người dùng hiện có làm `sub`.
-4. **Mỗi service sở hữu dữ liệu và quyền của mình.** Giao tiếp chỉ qua HTTP API và event có schema.
-5. **Trạng thái gốc nằm ở PostgreSQL**, không ở Redis. Mất Redis chỉ làm người dùng đăng nhập lại và event được phát lại từ outbox.
-6. **Chỉ thay đổi tương thích ngược** giữa các repo (thêm, không xóa/đổi nghĩa). Thay đổi phá vỡ chạy song song hai phiên bản, đổi theo *expand → migrate → contract*.
-7. **Không nhúng `localhost`, secret, hay URL cứng vào bundle/image.** Cấu hình đến từ môi trường lúc chạy.
-8. **Mọi thứ ngoài lõi nằm sau chuẩn hoặc interface** (OIDC, JWT, PostgreSQL, S3, SMTP, `EventBus`) để đổi nhà cung cấp hoặc nâng quy mô không phải viết lại nghiệp vụ.
+1. **Không tự viết xác thực nghiệp vụ:** Đăng ký, đăng nhập, mật khẩu, MFA, phiên và token thuộc Keycloak.
+2. **Trình duyệt tuyệt đối không bao giờ cầm access/refresh token:** Mọi giao tiếp xác thực của client chỉ dùng cookie phiên HttpOnly, Secure.
+3. **`sub` của Keycloak là khóa người dùng duy nhất:** Mọi database service (`iam_db`, `social_db`,...) dùng UUID này làm khóa liên kết người dùng.
+4. **Mỗi service sở hữu dữ liệu và ranh giới nghiệp vụ của mình:** Giao tiếp chỉ qua HTTP API hoặc Event có schema.
+5. **Trạng thái gốc nằm ở PostgreSQL, không nằm ở Redis:** Mất Redis chỉ làm người dùng đăng nhập lại hoặc event được phát lại từ bảng `outbox_events`.
+6. **Thay đổi tương thích ngược:** Bổ sung theo chiến lược *Expand → Migrate → Contract*.
+7. **Không nhúng `localhost`, secret, hay URL cứng vào bundle/image:** Nạp cấu hình từ môi trường lúc chạy.
+8. **Mọi thứ ngoài lõi nằm sau chuẩn:** OIDC, RFC 9457, W3C Trace Context, CloudEvents 1.0, S3 API.
 9. **Không mở Keycloak Admin Console ra internet.**
-10. **Chỉ trả tiền và vận hành thêm khi số liệu thật đòi hỏi.**
+10. **Tối giản hóa kiến trúc:** Không sinh thêm repo khi thư mục trong workspace hiện tại đã giải quyết triệt để vấn đề.
 
 ---
 
-## 5. Repo bị ảnh hưởng
+## 4. Danh mục Repositories & Trách nhiệm sau Chuẩn hóa
 
-Tên repo là tên gọi chung, agent đối chiếu với tên thật.
-
-| Repo | Mức ảnh hưởng | Hướng thay đổi |
+| Thành phần | Vị trí / Tên Repo | Trách nhiệm chính |
 |---|---|---|
-| `gateway` | **Lớn** | Thêm vai trò OIDC BFF (login/callback/session/logout/back-channel logout), session lưu Redis, chọn OIDC client theo host. Vẫn là proxy và rate limit. Bỏ cơ chế tự verify token của iam-service |
-| `iam-service` | **Lớn** | Rút gọn: bỏ đăng ký/đăng nhập/mật khẩu/OTP/JWT/session. Giữ Profile (tạo tự động theo `sub`), quản trị role qua Keycloak Admin API kèm audit, phát event. Là nơi migrate user sang Keycloak |
-| `iam-web-client` | **Lớn** | Thành landing + account portal. Giao diện đăng nhập/đăng ký chuyển sang Keycloak. Bỏ toàn bộ lưu token phía client. Landing theo `landing-page.md` |
-| `social`, `video`, `shop`, `stories` (web) | Vừa | Mỗi app thêm một OIDC client, dùng thư viện auth-client chung, cấu hình lúc chạy, Dockerfile static |
-| `portfolio` | Nhỏ | Giữ site tĩnh, công khai, không cần đăng nhập |
-| `social-service`, `media-service`, service khác | Vừa | Verify JWT Keycloak bằng thư viện chung; kiểm tra role/sở hữu; chuyển event sang Streams + outbox/inbox; media chuyển sang presigned upload khi cần |
-| `platform` (packages `@daccuong-uit/*`) | Vừa–Lớn | Thêm module verify JWT/JWKS + guard role; nâng `platform-event-bus` lên Redis Streams + outbox/inbox sau interface; giữ logger, tracing, config, http-common, contracts-events |
-| `web-kit` (**repo mới**) | Mới | Package frontend dùng chung: design tokens (theme Ember Night), UI components, auth-client (chỉ gọi endpoint phiên của gateway, không đụng token) |
-| `keycloak` (**repo mới**) | Mới | Image Keycloak của dự án: theme đăng nhập, cấu hình realm/client/flow dạng code |
-| `infra` (**repo mới**) | Mới | Compose (dev/prod), cấu hình Caddy, khởi tạo database, backup/restore, deploy, secrets mã hóa, runbook |
-| `architecture` (docs hiện có) | Nhỏ | Cập nhật snapshot sau mỗi giai đoạn |
+| **Điều phối & Hạ tầng** | `social-platform-workspace` (Gốc) | Quản lý Docker Compose, Caddyfile, Keycloak realm JSON, scripts vận hành polyrepo. **Không tạo repo `infra` riêng.** |
+| **Hạ tầng Backend** | `platform-backend` (`packages/*`) | Cung cấp `@daccuong-uit/backend-*`: Core, Auth (Keycloak JWKS), Telemetry (OTel), HTTP (Fastify/Express), Database (Postgres), EventBus (Streams), Cache, Audit. |
+| **Hạ tầng Frontend** | `platform-frontend` (`packages/*`) | Cung cấp `@daccuong-uit/ui` (Unified Design System, Outfit font, 4px grid, tokens OKLCH) & `@daccuong-uit/frontend-core` (BFF AuthClient). **Thay thế `web-kit`.** |
+| **Hợp đồng dùng chung** | `@daccuong-uit/contracts` | Zero-dependency TypeScript/Zod schemas, RFC 9457 Problem Details, CloudEvents 1.0, Session models. |
+| **API Gateway & BFF** | `services/gateway` | API Gateway, Rate limiting, và **OIDC BFF (RFC 10017)**: Quản lý session Redis, chuyển tiếp Keycloak access token xuống downstream, xử lý back-channel logout. |
+| **IAM Service** | `services/iam-service` | Rút gọn: Bỏ đăng ký/đăng nhập/mật khẩu tự viết. Giữ Profile người dùng (tự động tạo theo `sub`), đồng bộ role qua Keycloak Admin API + Audit log. |
+| **IAM Web Client** | `frontend/iam-web-client` | Đóng vai trò Landing Page đón đầu và Account Portal quản lý hồ sơ cá nhân. Giao diện login chuyển sang Keycloak Login Theme. |
+| **5 Domain Clients** | `fe-social`, `fe-video`, `fe-shop`, `fe-stories`, `fe-portfolio` | Sử dụng `@daccuong-uit/ui` và `@daccuong-uit/frontend-core`, cấu hình bảng màu riêng theo domain (OKLCH tokens), không lưu token. |
+| **Downstream Services**| `social-service`, `media-service`, `stories-service`, `media-worker` | Tự động xác thực JWT Keycloak bằng `@daccuong-uit/backend-auth`, chuyển event sang Redis Streams Outbox. |
 
 ---
 
-## 6. Giai đoạn (thứ tự ưu tiên, không phải lịch)
+## 5. Lộ trình Triển khai Thực tế (6 Bước)
 
-1. **Nền:** Keycloak chạy được ở dev và prod, cấu hình là code, Caddy, backup + restore thử thành công.
-2. **Thư viện dùng chung:** verify JWT, event bus Streams, auth-client, design tokens.
-3. **Web auth:** gateway làm BFF, iam-web-client chuyển sang cookie phiên, hết token trong trình duyệt.
-4. **Backend:** service chuyển sang verify JWT Keycloak (chạy song song bộ verify cũ trong lúc chuyển), iam-service rút gọn, migrate user giữ UUID.
-5. **SSO đa app:** từng app thêm client, đăng nhập một lần dùng nhiều app, đăng xuất toàn cục.
-6. **Event và media:** chuyển event sang Streams + outbox, presigned upload và worker khi có nhu cầu.
-
-Mỗi giai đoạn phải rollback được và không big bang. Thứ tự phát hành giữa repo: `platform` → service → `gateway` → app.
-
----
-
-## 7. Agent cần xác minh trong repo trước khi lập kế hoạch
-
-**Hiện trạng xác thực và dữ liệu**
-- Luồng đăng ký/đăng nhập/refresh hiện tại, nơi lưu token phía client, cách gateway và các service đang xác thực.
-- Thuật toán và tham số băm mật khẩu hiện tại (Argon2?), có import được vào Keycloak không; số lượng và trạng thái user; các bảng/cột định danh mà service khác đang tham chiếu.
-- Dữ liệu OTP/số điện thoại đang dùng và cách xử lý khi SMS chỉ còn là fallback.
-
-**Hợp đồng giữa các repo**
-- Response envelope, mã lỗi và các route gateway mà frontend đang phụ thuộc.
-- Chỗ nào dùng Redis Pub/Sub, event nào đang phát và ai nhận; cách publish/consume hiện tại trong `platform-event-bus`.
-- Service nào đang import code hoặc truy vấn DB của service khác (vi phạm nguyên tắc 4).
-
-**Build và triển khai**
-- Phiên bản thực tế của Angular, NestJS, Node, Prisma, Redis, PostgreSQL và mức nâng cần thiết.
-- Dockerfile, CI, quy trình publish package và image hiện có; cách app đang nhận cấu hình (URL không gian, API base) và có nhúng `localhost` không.
-- Cách các frontend hiện gọi API (Nginx proxy, CORS, biến môi trường).
-
-**Kiểm tra tính khả thi của định hướng (nếu không khớp thì báo lại)**
-- Import hash mật khẩu vào Keycloak; hỗ trợ passkey, recovery codes, back-channel logout, và công cụ áp cấu hình realm ở đúng phiên bản Keycloak dùng.
-- Cách đăng ký trang đăng ký của Keycloak từ nút "Tạo tài khoản" ở landing.
-- Cách hoạt động của cookie `__Host-` khi chạy dev trên `localhost` với proxy của Angular.
-
----
-
-## 8. Không làm bây giờ, và đường mở rộng
-
-**Chưa làm:** Kubernetes, service mesh, Envoy, Kafka/NATS, OpenFGA, Temporal, đa vùng, nhiều node Keycloak/PostgreSQL, SMS OTP, luồng thanh toán/PCI, GraphQL, Module Federation.
-
-**Mở rộng sau này là thay thành phần, không thiết kế lại:**
-
-| Khi cần | Thay đổi |
-|---|---|
-| Keycloak/PostgreSQL cần chạy liên tục | Thêm node, replica, hoặc chuyển managed |
-| Redis không đủ cho event | Thêm adapter NATS JetStream hoặc Kafka sau `EventBus` |
-| Nhiều VM/service | Chuyển Compose sang k3s/Kubernetes, giữ nguyên image và cấu hình |
-| Mobile native | Bật public client PKCE trong Keycloak, thêm route Bearer ở edge |
-| Thanh toán, step-up | Dùng `acr`; ưu tiên trang thanh toán do provider host (ngoài phạm vi PCI); cách ly khi có provider |
-| SMS OTP | Thêm authenticator Keycloak + adapter nhà cung cấp SMS |
-| Yêu cầu vùng/dữ liệu | Di chuyển domain dữ liệu theo vùng nhờ cấu hình và ranh giới đã có |
-
----
-
-## 9. Điểm con người cần chốt
-
-1. **Domain gốc:** `reals.vn` (bạn nói) hay `reals.id` (`landing-page.md`)? Tài liệu dùng `reals.vn`, agent xử lý như một biến cấu hình.
-2. **VM và nơi lưu backup ngoài VM** (ảnh hưởng thành phần nào bật ngay).
-3. **Nhà cung cấp SMTP** cho email xác minh và đặt lại mật khẩu.
-4. **Repo và package private hay public** (ảnh hưởng giới hạn miễn phí của registry).
+1. **Bước 1: Chạy Keycloak trong Compose gốc:** Thêm container `keycloak` vào `docker-compose.yml`, import realm `reals` với các OIDC client định cấu hình sẵn, liên kết PostgreSQL cho Keycloak.
+2. **Bước 2: Xây dựng 3 gói Platform nền tảng:**
+   - `@daccuong-uit/contracts`: Đóng gói schemas dùng chung, `UserId` (UUID), `ProblemDetails`.
+   - `platform-backend`: Đóng gói `@daccuong-uit/backend-auth` (JWKS), `backend-event-bus` (Streams Outbox).
+   - `platform-frontend`: Đóng gói Design System tokens, component primitives, và BFF `AuthClient`.
+3. **Bước 3: Nâng cấp Gateway thành OIDC BFF:**
+   - Cài đặt luồng Authorization Code Flow trong Gateway.
+   - Quản lý cookie phiên và lưu trữ token trong Redis.
+   - Thêm endpoint nhận Back-Channel Logout từ Keycloak.
+4. **Bước 4: Chuyển đổi Frontend sang BFF Auth:**
+   - Cập nhật `iam-web-client` thành Landing Page + Account Portal.
+   - Tích hợp `@daccuong-uit/frontend-core` vào cả 6 client, gỡ bỏ toàn bộ logic lưu token cũ trong LocalStorage.
+   - Tích hợp `@daccuong-uit/ui` để đồng bộ UI, font Outfit, và spacing.
+5. **Bước 5: Chuyển đổi Backend sang Keycloak Resource Server:**
+   - Áp dụng `@daccuong-uit/backend-auth` cho các microservices để verify Keycloak JWT.
+   - Rút gọn `iam-service`, di chuyển dữ liệu tài khoản hiện có sang Keycloak giữ nguyên UUID làm `sub`.
+6. **Bước 6: Nâng cấp Event Bus & Hoàn thiện:**
+   - Chuyển Pub/Sub sang Redis Streams + Transactional Outbox Pattern cho các sự kiện quan trọng.

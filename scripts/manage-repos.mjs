@@ -7,6 +7,7 @@ const root = resolve(import.meta.dirname, '..');
 const allRepositories = [
   '.',
   'platform',
+  'platform-frontend',
   'frontend/social-web-client',
   'frontend/iam-web-client',
   'frontend/video-web-client',

@@ -119,6 +119,62 @@ services:
       timeout: 5s
       retries: 5
 
+  # ─── PostgreSQL: Keycloak ────────────────────────────────────────────────
+  keycloak-postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: ${KEYCLOAK_DB_USER:-keycloak}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak_password}
+    volumes:
+      - keycloak_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${KEYCLOAK_DB_USER:-keycloak} -d keycloak" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Keycloak 26 (OIDC identity provider) ────────────────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3.3
+    command: [ "start-dev", "--import-realm" ]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-postgres:5432/keycloak
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER:-keycloak}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak_password}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8080}
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./infra/keycloak:/opt/keycloak/data/import:ro
+    restart: unless-stopped
+    depends_on:
+      keycloak-postgres:
+        condition: service_healthy
+
+  keycloak-idp-config:
+    image: node:22-alpine
+    entrypoint: [ "node", "/opt/keycloak/configure-keycloak.mjs" ]
+    environment:
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      APPLE_CLIENT_SECRET: ${APPLE_CLIENT_SECRET:-}
+    volumes:
+      - ./infra/keycloak/configure-keycloak.mjs:/opt/keycloak/configure-keycloak.mjs:ro
+    restart: "no"
+    depends_on:
+      keycloak:
+        condition: service_started
+
   # ─── MinIO (S3-compatible object storage) ────────────────────────────────
   # Purpose  : Stores uploaded media files (images, videos, cover art, avatars)
   # Consumers: media-service (upload/signed URL), media-worker (transcoding input/output)
@@ -171,7 +227,7 @@ services:
   # ─── IAM Service (:3001) ────────────────────────────────────────────────
   # Responsibility: Authentication, Identity, Sessions, MFA, RBAC
   # DB: iam_db (iam-postgres:5432)
-  # Depends on: iam-postgres, redis, jaeger
+  # Depends on: iam-postgres, jaeger, keycloak
   iam-service:
     build:
       context: ./services/iam-service
@@ -181,8 +237,10 @@ services:
     env_file: ./services/iam-service/.env.example
     environment:
       DATABASE_URL: postgresql://${IAM_DB_USER:-iam_admin}:${IAM_DB_PASSWORD:-iam_password}@iam-postgres:5432/${IAM_DB_NAME:-iam_db}?schema=public
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379
-      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-local_shared_access_secret_change_me_32_chars}
+      AUTH_JWKS_URI: http://keycloak:8080/realms/reals/protocol/openid-connect/certs
+      AUTH_ISSUER: ${KEYCLOAK_ISSUER_URL:-http://localhost:8080/realms/reals}
+      AUTH_AUDIENCE: account
+      AUTH_CLIENT_ID: account
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - "3001:3001"
@@ -190,10 +248,10 @@ services:
     depends_on:
       iam-postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
       jaeger:
         condition: service_healthy
+      keycloak:
+        condition: service_started
 
   # ─── Media Service (:3003) ──────────────────────────────────────────────
   # Responsibility: Media upload, metadata indexing, signed URLs, BullMQ dispatch
@@ -211,6 +269,10 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379
       MINIO_ENDPOINT: minio
       MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-localhost}
+      AUTH_JWKS_URI: http://keycloak:8080/realms/reals/protocol/openid-connect/certs
+      AUTH_ISSUER: ${KEYCLOAK_ISSUER_URL:-http://localhost:8080/realms/reals}
+      AUTH_AUDIENCE: account
+      AUTH_CLIENT_ID: account
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - "3003:3003"
@@ -224,6 +286,8 @@ services:
         condition: service_healthy
       jaeger:
         condition: service_healthy
+      keycloak:
+        condition: service_started
 
   # ─── Social Service (:3002) ─────────────────────────────────────────────
   # Responsibility: Posts, Comments, Reactions, Follow graph, Reels, Videos
@@ -240,6 +304,10 @@ services:
       SOCIAL_DATABASE_URL: postgresql://${SOCIAL_DB_USER:-social_admin}:${SOCIAL_DB_PASSWORD:-social_password}@social-postgres:5432/${SOCIAL_DB_NAME:-social_db}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379
       MEDIA_SERVICE_URL: http://media-service:3003/api/v1
+      AUTH_JWKS_URI: http://keycloak:8080/realms/reals/protocol/openid-connect/certs
+      AUTH_ISSUER: ${KEYCLOAK_ISSUER_URL:-http://localhost:8080/realms/reals}
+      AUTH_AUDIENCE: account
+      AUTH_CLIENT_ID: account
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - "3002:3002"
@@ -251,6 +319,8 @@ services:
         condition: service_healthy
       jaeger:
         condition: service_healthy
+      keycloak:
+        condition: service_started
 
   # ─── Stories Service (:3004) ────────────────────────────────────────────
   # Responsibility: Novels, Chapters, Volumes, Genres, Library/Shelves,
@@ -268,6 +338,10 @@ services:
       STORIES_DATABASE_URL: postgresql://${STORIES_DB_USER:-stories_admin}:${STORIES_DB_PASSWORD:-stories_password}@stories-postgres:5432/${STORIES_DB_NAME:-stories_db}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379
       MEDIA_SERVICE_URL: http://media-service:3003/api/v1
+      AUTH_JWKS_URI: http://keycloak:8080/realms/reals/protocol/openid-connect/certs
+      AUTH_ISSUER: ${KEYCLOAK_ISSUER_URL:-http://localhost:8080/realms/reals}
+      AUTH_AUDIENCE: account
+      AUTH_CLIENT_ID: account
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - "3004:3004"
@@ -279,6 +353,8 @@ services:
         condition: service_healthy
       jaeger:
         condition: service_healthy
+      keycloak:
+        condition: service_started
 
   # ─── API Gateway (:3000) ────────────────────────────────────────────────
   # Responsibility: Public edge router, rate limiting, JWT validation,
@@ -296,16 +372,43 @@ services:
       SOCIAL_SERVICE_URL: http://social-service:3002/api/v1
       MEDIA_SERVICE_URL: http://media-service:3003/api/v1
       STORIES_SERVICE_URL: http://stories-service:3004/api/v1
-      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-local_shared_access_secret_change_me_32_chars}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379
+      KEYCLOAK_PUBLIC_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8080}
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
+      KEYCLOAK_REALM: reals
+      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:3000}
+      GATEWAY_APP_HOST: ${GATEWAY_APP_HOST:-localhost:3000}
+      IAM_APP_HOST: ${IAM_APP_HOST:-localhost:4200}
+      SOCIAL_APP_HOST: ${SOCIAL_APP_HOST:-localhost:4201}
+      VIDEO_APP_HOST: ${VIDEO_APP_HOST:-localhost:4202}
+      SHOP_APP_HOST: ${SHOP_APP_HOST:-localhost:4203}
+      STORIES_APP_HOST: ${STORIES_APP_HOST:-localhost:4204}
+      PORTFOLIO_APP_HOST: ${PORTFOLIO_APP_HOST:-localhost:4205}
+      IAM_APP_ORIGIN: ${IAM_APP_ORIGIN:-http://localhost:4200}
+      SOCIAL_APP_ORIGIN: ${SOCIAL_APP_ORIGIN:-http://localhost:4201}
+      VIDEO_APP_ORIGIN: ${VIDEO_APP_ORIGIN:-http://localhost:4202}
+      SHOP_APP_ORIGIN: ${SHOP_APP_ORIGIN:-http://localhost:4203}
+      STORIES_APP_ORIGIN: ${STORIES_APP_ORIGIN:-http://localhost:4204}
+      PORTFOLIO_APP_ORIGIN: ${PORTFOLIO_APP_ORIGIN:-http://localhost:4205}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - "3000:3000"
     restart: unless-stopped
     depends_on:
-      - iam-service
-      - media-service
-      - social-service
-      - stories-service
+      iam-service:
+        condition: service_started
+      media-service:
+        condition: service_started
+      social-service:
+        condition: service_started
+      stories-service:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+      keycloak-idp-config:
+        condition: service_completed_successfully
 
   # ─── Media Worker (no exposed port) ─────────────────────────────────────
   # Responsibility: Background FFmpeg transcoding, thumbnail generation,
@@ -421,3 +524,4 @@ volumes:
   stories_postgres_data:
   redis_data:
   minio_data:
+  keycloak_postgres_data:

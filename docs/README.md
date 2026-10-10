@@ -35,6 +35,7 @@ Hướng dẫn chi tiết từng module và công nghệ phục vụ implement t
 - [**Phân Hệ Stories / Novel Reading**](./skills/stories/reading-service-design.md): 20 backend modules, luồng đọc truyện, ví tiền & thanh toán.
 - [**Chuẩn Prisma Schema cho Stories**](./skills/stories/schema.prisma): 55 models quan hệ toàn diện.
 - [**Phân Hệ Authentication & SSO**](./skills/auth/target-architecture-plan.md): Lộ trình MFA, session rotation và bảo mật.
+- [**Kế Hoạch Đồng Bộ Implementation & Dọn Legacy**](./skills/auth/implementation-sync-cleanup-plan.md): Đồng bộ các service/client với packages đã triển khai và dọn phần thừa theo từng phase.
 - [**IAM Landing Page Specification**](./skills/auth/landing-page.md): Hướng dẫn thiết kế frontend landing portal.
 - [**Portfolio Developer Specs**](./skills/portfolio/portfolio_uiux.md): Hướng dẫn thiết kế trang showcase cá nhân.
 
