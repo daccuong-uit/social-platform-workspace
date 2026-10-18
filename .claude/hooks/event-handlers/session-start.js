@@ -17,10 +17,10 @@ async function main() {
     `=== Social Platform Workspace Active ===\n` +
     `- Event: SessionStart (Source: ${source})\n` +
     `- Polyrepo Architecture: Independent Fastify + NestJS services\n` +
-    `- Active Microservices: gateway, iam-service, social-service, media-service, media-worker\n` +
-    `- Shared Packages: published @daccuong-uit/* packages from the platform repository\n` +
+    `- Active Microservices: gateway, iam-service, social-service, media-service, stories-service, media-worker\n` +
+    `- Shared Packages: platform/ and platform-frontend/; verify registry availability before consumer migrations\n` +
     `- Invariant Rule: Cross-service direct relative imports are forbidden by PreToolUse hooks.\n` +
-    `- For task guidance, consult CLAUDE.md and .architecture/ guidelines.`;
+    `- For task guidance, consult CLAUDE.md and docs/architecture/.`;
 
   outputHookSuccess('SessionStart', {
     additionalContext: contextMessage,

@@ -11,7 +11,7 @@ const { readHookInput, blockAction, allowAction } = require('../utils/hook-io');
 
 // Match relative import crossing services boundaries
 // e.g. from '../services/iam-service' or '../../services/social-service'
-const CROSS_SERVICE_IMPORT_REGEX = /(?:import|from|require)\s*\(?['"][^'"]*\/services\/(?:iam-service|gateway|social-service|media-service)/i;
+const CROSS_SERVICE_IMPORT_REGEX = /(?:import|from|require)\s*\(?['"][^'"]*\/services\/(?:iam-service|gateway|social-service|media-service|stories-service|media-worker)/i;
 
 async function main() {
   const input = await readHookInput();

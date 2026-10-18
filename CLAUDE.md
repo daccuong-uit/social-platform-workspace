@@ -1,117 +1,32 @@
-# Social Platform Workspace — Claude Directive (`CLAUDE.md`)
-> Agent-Native Multi-Repo Root Directives & Operational Standards following Anthropic Claude Guidelines.
+# Workspace Agent Guide
 
----
+## Repository Layout
 
-## 1. System Map & Workspace Architecture
+This is a polyrepo workspace. Services, clients, `platform`, and `platform-frontend` are independent Git repositories; keep code changes inside the owning repository. The workspace root owns orchestration, infrastructure, and cross-repository documentation.
 
-This workspace is a high-performance Polyrepo/Monorepo architecture hosting social commerce backend microservices and modern frontend applications:
+- Backend shared libraries and contracts: `platform/` (`@daccuong-uit/*`).
+- Frontend shared libraries: `platform-frontend/` (`@daccuong-uit/ui`, `@daccuong-uit/frontend-core`).
+- Architecture and cross-cutting plans: `docs/architecture/`.
+- Domain design/reference material: `docs/domain-guides/`.
+- API/data standards: `docs/specs/` and `docs/schemas/`.
+- Agent workflow skills: `.agents/skills/<name>/SKILL.md`.
+- Claude-specific settings/hooks: `.claude/`; installed Git hook: `.githooks/pre-push`.
 
-### Microservices Directory: `services/`
-- **`services/gateway/`** (`@app/gateway`):
-  - Fastify + NestJS API Gateway with Throttler rate limiting.
-  - Entry point for all client requests, routes to downstream microservices.
-- **`services/iam-service/`** (`@app/iam-service`):
-  - Unified authentication, identity, profiles, sessions, MFA, roles, and permissions.
-  - One Prisma schema and one database boundary (`iam_db`).
-- **`services/social-service/`** (`@app/social-service`):
-  - Core social domain: Posts, Comments, Likes, User social graphs, and feed streams.
-  - Structured modular layered architecture (Controllers -> Services -> Repositories -> Event Listeners).
-  - Prisma ORM (`services/social-service/prisma/schema.prisma`).
-- **`services/media-service/`** (`@app/media-service`):
-  - Media upload management, metadata indexing, signed URLs, and BullMQ dispatching.
-- **`services/media-worker/`**:
-  - Background asynchronous BullMQ media processor (transcoding, compression, thumbnails).
-- Shared reusable packages live in the independent `platform/` repository and are consumed through published npm packages.
+See [docs/README.md](docs/README.md) for navigation and the root [README.md](README.md) for workspace commands.
 
-### Frontend Directory: `frontend/`
-- **`frontend/social-web-client/`**: Modern client for social commerce.
+## Architecture Boundaries
 
----
+1. Each service owns its database and domain logic. Do not import files directly from another service repository.
+2. Cross-repository contracts use versioned `@daccuong-uit/*` packages, HTTP APIs, or explicit events.
+3. Keycloak is the identity provider. IAM owns application profiles keyed by Keycloak `sub`; Gateway owns the web BFF session. Browser clients use the HttpOnly session cookie and must not persist access or refresh tokens.
+4. Service JWT verification and authorization remain enforced at the downstream service; never trust caller-supplied identity headers without a verified internal boundary.
+5. Media Worker is Python; do not force NestJS packages or patterns into it.
+6. Make schema/API/event changes backward-compatible with Expand -> Migrate -> Contract and retain rollback paths.
 
-## 2. Deterministic Command Reference
+## Working and Validation
 
-All commands MUST be executed from workspace root or targeted using Turborepo / npm workspaces. Do not guess commands.
-
-### Agent Orchestration Commands
-```bash
-# Start local infrastructure (application services are independent repositories)
-npm run infra:up
-
-# Stop infrastructure
-npm run infra:down
-```
-
-### Individual Service Commands
-To run commands for a specific service, use `npm --workspace` or `turbo --filter`:
-
-```bash
-# Gateway
-npm --workspace=@app/gateway run dev
-npm --workspace=@app/gateway run build
-npm --workspace=@app/gateway run test
-
-# IAM Service
-cd services/iam-service
-npm run dev
-npm run build
-npm run test
-npm run db:generate
-npm run db:migrate
-
-# Social Service
-npm --workspace=@app/social-service run dev
-npm --workspace=@app/social-service run build
-npm --workspace=@app/social-service run test
-npm --workspace=@app/social-service run db:generate
-npm --workspace=@app/social-service run db:migrate
-
-# Media Service
-npm --workspace=@app/media-service run dev
-npm --workspace=@app/media-service run build
-npm --workspace=@app/media-service run test
-npm --workspace=@app/media-service run db:generate
-npm --workspace=@app/media-service run db:migrate
-```
-
----
-
-## 3. Code Style & Architecture Guidelines
-
-### A. Layered Modular Architecture (Phase 3 Spec)
-All NestJS services must follow clean module separation:
-1. **Controllers (`*.controller.ts`)**:
-   - HTTP route handlers only.
-   - Inject Services; never directly query Database/Prisma in Controllers.
-   - Use DTOs with validation decorators (`class-validator` or `zod`).
-2. **Services (`*.service.ts`)**:
-   - Domain business logic, transaction boundaries, and orchestration.
-   - Delegate data persistence to dedicated Repositories where applicable.
-3. **Repositories (`*.repository.ts`)**:
-   - Encapsulate Prisma queries, data transformations, and caching logic.
-4. **Listeners / Consumers (`*.listener.ts` / `*.consumer.ts`)**:
-   - Handle asynchronous events and messages decoupled from HTTP request cycles.
-
-### B. Naming & TypeScript Conventions
-- **Files**: Kebab-case with type suffix: `user-profile.service.ts`, `create-post.dto.ts`, `post.entity.ts`.
-- **Classes**: PascalCase: `UserProfileService`, `CreatePostDto`.
-- **Variables & Methods**: camelCase: `findPostById`, `currentUser`.
-- **Interfaces & Types**: PascalCase, descriptive names without `I` prefix: `PostPayload`, `AuthTokenClaims`.
-- **Strict Typing**: Never use `any` when a type can be inferred or defined.
-
-### C. Import Rules & Boundary Guardrails
-1. **Domain Isolation**: Microservices in `services/*` must NEVER import relative paths from other microservices (`../../services/other-service`). This is strictly enforced by PreToolUse deterministic hooks.
-2. **Shared Packages**: Cross-service code must be shared exclusively via published `@daccuong-uit/*` packages from the `platform/` repository.
-3. **No Secret Commits**: Never edit or commit `.env` or credential files.
-4. **Fastify Compatibility**: Services use `@nestjs/platform-fastify`. Do not use Express-specific request/response idioms unless explicitly configured.
-
----
-
-## 4. Claude Agent Environment Integration
-
-This workspace is equipped with **Claude Code Deterministic Hooks** located in `.claude/`:
-- **`settings.json`**: Official Anthropic schema hook registrations.
-- **`hooks/pre-command/`**: Guards blocking destructive commands (`rm -rf`, `prisma reset`, `git push --force`).
-- **`hooks/validators/`**: Enforces microservice domain isolation during file edits.
-- **`hooks/post-command/`**: Provides automated quality and layer consistency feedback.
-- **`hooks/event-handlers/`**: Session lifecycle management (`SessionStart`, `Stop`).
+- Read the owner repo's `package.json`, tests, and local documentation before editing.
+- Run a focused build/test after the first implementation edit, then the relevant repository checks.
+- Workspace multi-repo commands are `npm run repos:status`, `npm run repos:verify`, `npm run repos:commit -- <message>`, and `npm run repos:push`.
+- Never stage `.env`, credentials, build output, or dependencies. Preserve changes already present in any nested repository.
+- Root `repos:verify` validates Compose configuration and checks repository diffs; it is also run by the installed pre-push hook.

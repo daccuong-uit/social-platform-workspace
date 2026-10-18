@@ -10,16 +10,16 @@ Hệ thống áp dụng nguyên tắc **Database-per-Service**. Mỗi microservi
 
 | Dịch vụ | Cơ sở dữ liệu | Cổng Local | ORM / Migration Tool | Vị trí Schema trong Codebase |
 |---|---|---|---|---|
-| **IAM Service** | `iam_db` | `5433` | Prisma ORM | [`services/iam-service/prisma/schema.prisma`](../../services/iam-service/prisma/schema.prisma) |
+| **IAM Service** | `iam_db` | `5432` | Prisma ORM | [`services/iam-service/prisma/schema.prisma`](../../services/iam-service/prisma/schema.prisma) |
 | **Media Service** | `media_db` | `5434` | Prisma ORM | [`services/media-service/prisma/schema.prisma`](../../services/media-service/prisma/schema.prisma) |
-| **Social Service** | `social_db` | `5435` | Prisma ORM | [`services/social-service/prisma/schema.prisma`](../../services/social-service/prisma/schema.prisma) |
-| **Stories Service** | `stories_db` | `5436` | Prisma ORM (`@prisma/client-reading`) | [`services/stories-service/prisma/schema.prisma`](../../services/stories-service/prisma/schema.prisma) (Bản blueprint tại [`docs/skills/stories/schema.prisma`](../skills/stories/schema.prisma)) |
+| **Social Service** | `social_db` | `5433` | Prisma ORM | [`services/social-service/prisma/schema.prisma`](../../services/social-service/prisma/schema.prisma) |
+| **Stories Service** | `stories_db` | `5435` | Prisma ORM | [`services/stories-service/prisma/schema.prisma`](../../services/stories-service/prisma/schema.prisma) (Bản thiết kế tham khảo, chưa đồng bộ với schema đang chạy: [`docs/domain-guides/stories/schema.prisma`](../domain-guides/stories/schema.prisma)) |
 
 ---
 
 ## 2. Event Contracts & Domain Events
 
-Tất cả các sự kiện trao đổi giữa các vi dịch vụ (Inter-service Event Bus) được định nghĩa tập trung trong repository `platform/contracts/events` (`@daccuong-uit/platform-contracts-events`):
+Các domain event legacy đang được một số consumer dùng được đóng gói trong `platform/contracts/events` (`@daccuong-uit/contracts-events`). Shared runtime schemas/protocol contracts mới nằm trong package `@daccuong-uit/contracts`. Chưa phải mọi service đã chuyển sang cùng một event envelope; migration được theo dõi trong [implementation sync plan](../architecture/implementation-sync-cleanup-plan.md).
 
 - **User Events:**
   - `user.created.v1`: Được phát hành bởi IAM Service khi người dùng đăng ký thành công. Subscribed bởi Social Service & Stories Service để khởi tạo user profile / author profile.

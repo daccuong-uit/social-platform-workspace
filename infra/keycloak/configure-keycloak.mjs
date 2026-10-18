@@ -31,8 +31,8 @@ async function waitForAdmin() {
   throw new Error('Keycloak admin API did not become ready');
 }
 
-async function adminRequest(path, { method = 'GET', body, allowNotFound = false } = {}) {
-  const response = await fetch(new URL(`/admin/realms/${realm}${path}`, origin), {
+async function adminRequest(path, { method = 'GET', body, allowNotFound = false } = {}, targetRealm = realm) {
+  const response = await fetch(new URL(`/admin/realms/${targetRealm}${path}`, origin), {
     method,
     headers: {
       authorization: `Bearer ${accessToken}`,
@@ -60,6 +60,45 @@ async function waitForRealm() {
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
   throw new Error('Keycloak realm reals was not imported');
+}
+
+async function ensureDefaultClientScopes() {
+  const scopeNames = ['basic', 'profile', 'email', 'roles', 'web-origins', 'acr'];
+  const clientIds = ['gateway-bff', 'iam-web', 'social-web', 'video-web', 'shop-web', 'stories-web', 'portfolio-web'];
+  const [realmScopes, masterScopes, clients] = await Promise.all([
+    adminRequest('/client-scopes'),
+    adminRequest('/client-scopes', {}, 'master'),
+    adminRequest('/clients'),
+  ]);
+
+  for (const name of scopeNames) {
+    let scope = realmScopes.find((item) => item.name === name);
+    if (!scope) {
+      const masterScope = masterScopes.find((item) => item.name === name);
+      if (!masterScope) throw new Error(`Keycloak built-in client scope is missing: ${name}`);
+
+      const definition = structuredClone(masterScope);
+      delete definition.id;
+      delete definition.containerId;
+      for (const mapper of definition.protocolMappers ?? []) {
+        delete mapper.id;
+        delete mapper.containerId;
+      }
+      await adminRequest('/client-scopes', { method: 'POST', body: definition });
+      scope = (await adminRequest('/client-scopes')).find((item) => item.name === name);
+      if (!scope) throw new Error(`Could not create Keycloak client scope: ${name}`);
+    }
+
+    for (const clientId of clientIds) {
+      const client = clients.find((item) => item.clientId === clientId);
+      if (!client) throw new Error(`Keycloak OIDC client is missing: ${clientId}`);
+      const assignedScopes = await adminRequest(`/clients/${client.id}/default-client-scopes`);
+      if (!assignedScopes.some((item) => item.id === scope.id)) {
+        await adminRequest(`/clients/${client.id}/default-client-scopes/${scope.id}`, { method: 'PUT' });
+      }
+    }
+  }
+  console.log('Ensured standard OIDC scopes on Reals web clients');
 }
 
 async function configureIdentityProvider(alias, providerId, config) {
@@ -127,6 +166,7 @@ async function enablePasskeyBrowserFlow() {
 
 await waitForAdmin();
 await waitForRealm();
+await ensureDefaultClientScopes();
 await configureIdentityProvider('google', 'google', {
   clientId: process.env.GOOGLE_CLIENT_ID ?? '',
   clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',

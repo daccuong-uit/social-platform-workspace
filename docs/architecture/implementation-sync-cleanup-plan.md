@@ -1,6 +1,6 @@
 # Kế hoạch Đồng bộ Implementation và Dọn Legacy
 
-> **Mục đích:** Đồng bộ backend services và các client đang hoạt động theo các package/chuẩn đã triển khai trong `.architecture`, `platform` và `platform-frontend`; loại bỏ phần trùng lặp hoặc nằm ngoài phạm vi sau khi xác nhận không còn consumer.
+> **Mục đích:** Đồng bộ backend services và các client đang hoạt động theo packages/chuẩn trong `platform` và `platform-frontend`; loại bỏ phần trùng lặp sau khi xác nhận không còn consumer.
 >
 > **Không thuộc mục tiêu:** Xây lại platform packages, mở rộng nghiệp vụ sản phẩm, hoặc triển khai feature cho các client đang để sau.
 
@@ -21,7 +21,7 @@
 
 ## 2. Nguyên tắc dọn dẹp
 
-1. Xem các package nền tảng và thiết kế trong ba tài liệu `.architecture` là đã triển khai; không tạo lại hoặc đổi kiến trúc nếu chỉ cần migrate consumer.
+1. Xem các package nền tảng và thiết kế trong [architecture records](./README.md#4-platform-design-records) là đã triển khai; không tạo lại package nếu chỉ cần migrate consumer.
 2. Lấy package đã publish và contract đang được consumer sử dụng làm nguồn chuẩn; ghi lại mapping package cũ → package chuẩn trước khi đổi.
 3. Thực hiện theo **Expand → Migrate → Contract**. Không xóa API, bảng dữ liệu, event hay dependency khi còn consumer hoặc chưa có đường rollback.
 4. Chỉ xóa mã/dependency có bằng chứng không còn reference trong source, build config, deployment config và runtime.

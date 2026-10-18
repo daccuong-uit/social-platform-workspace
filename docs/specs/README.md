@@ -1,12 +1,12 @@
 # Static Knowledge: Specifications & API Conventions
 
-Tài liệu quy chuẩn kỹ thuật (Technical Specifications), tiêu chuẩn thiết kế API (RESTful API Standards), cấu trúc phản hồi chuẩn (Response Envelope) và quy ước bảo mật trong toàn bộ hệ sinh thái **Reals Platform**.
+Cross-cutting API and security conventions for **Reals Platform**. Prefer the shared contracts package for runtime schemas; preserve existing API shapes until each consumer has migrated.
 
 ---
 
 ## 1. Chuẩn Hóa Cấu Trúc Phản Hồi (Single Envelope Standard)
 
-Tất cả các API công khai đi qua API Gateway (`services/gateway`) hoặc nội bộ giữa các microservice đều phải tuân theo cấu trúc phản hồi chuẩn (Single Envelope) do thư viện `@daccuong-uit/platform-http-common` cung cấp:
+New APIs should use the shared `ProblemDetails` contract (RFC 9457) from `@daccuong-uit/contracts`. Existing endpoints may still return the legacy success envelope from `@daccuong-uit/platform-http-common`; do not change those response shapes without migrating their clients.
 
 ### Phản Hồi Thành Công (Success Envelope)
 ```json
@@ -37,8 +37,7 @@ Tất cả các API công khai đi qua API Gateway (`services/gateway`) hoặc n
 }
 ```
 
-> [!IMPORTANT]
-> **Quy tắc Single Envelope:** API Gateway đã tích hợp interceptor tự động normalize response từ upstream services. Các microservices backend cần trả về dữ liệu thuần túy (hoặc thông qua chuẩn `platform-http-common`), tránh hiện tượng wrap lặp 2 lần (`data.data`).
+> **Migration rule:** Do not add a second envelope around an upstream response. Migrate legacy endpoints and clients incrementally, with contract tests before removing the old shape.
 
 ---
 
@@ -67,10 +66,11 @@ Dữ liệu trả về phân trang chuẩn:
 
 ## 3. Xác Thực & Ủy Quyền (Authentication & Security)
 
-- **Cơ chế Token:** Sử dụng JWT Bearer Token trong header `Authorization: Bearer <jwt_access_token>`.
+- **Browser authentication:** Web clients use the Gateway BFF with an HttpOnly session cookie. Access and refresh tokens stay server-side and must not be stored in browser storage or exposed to JavaScript.
+- **Service authentication:** Each downstream service independently verifies the Keycloak access JWT with `@daccuong-uit/backend-auth` and configured issuer/audience/JWKS.
 - **Phân tách Trách nhiệm:**
-  - **API Gateway**: Xác thực token sơ bộ (`JwtAuthGuard`), giải mã `userId`, `role` và inject vào request headers (`x-user-id`, `x-user-role`) trước khi forward vào các microservices nội bộ.
-  - **Microservices**: Có thể tiếp nhận danh tính người dùng thông qua custom decorators (`@CurrentUser()`, `@OptionalUser()`) hoặc verify token cục bộ khi cần.
+  - **Gateway**: Owns OIDC login/callback, BFF session, refresh, logout and downstream token forwarding.
+  - **Microservices**: Verify the forwarded Keycloak JWT locally. Do not trust identity headers as the sole authentication proof.
 - **RBAC Roles:** `USER`, `AUTHOR`, `CREATOR`, `MODERATOR`, `ADMIN`, `SYSTEM_ADMIN`.
 
 ---
@@ -84,5 +84,5 @@ Mỗi microservice khi chạy ở chế độ phát triển đều cung cấp gi
 | **API Gateway** | `http://localhost:3000/docs` |
 | **IAM Service** | `http://localhost:3001/docs` |
 | **Media Service** | `http://localhost:3003/docs` |
-| **Social Service** | `http://localhost:3004/docs` |
-| **Stories Service** | `http://localhost:3005/docs` |
+| **Social Service** | `http://localhost:3002/docs` |
+| **Stories Service** | `http://localhost:3004/docs` |

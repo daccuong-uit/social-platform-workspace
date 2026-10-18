@@ -161,7 +161,7 @@
     "// ─── CLIENT: fe-portfolio local (:4205) ────────────────": "",
     "local:fe-portfolio:up": "npm --prefix frontend/portfolio-web-client run start",
     "local:fe-portfolio:logs": "echo 'Portfolio client logs are in the terminal running local:fe-portfolio:up'",
-    "// GIT — Multi-repo operations across all 14 repositories": "",
+    "// GIT — Multi-repo operations across all 15 repositories": "",
     "repos:status": "node scripts/manage-repos.mjs status",
     "repos:commit": "node scripts/manage-repos.mjs commit",
     "repos:push": "node scripts/manage-repos.mjs push",

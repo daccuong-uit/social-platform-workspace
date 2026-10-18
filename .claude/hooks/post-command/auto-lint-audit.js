@@ -27,7 +27,7 @@ async function main() {
     if (filePath.includes('services') || filePath.includes('src')) {
       reminder += `- Layer Reminder: Ensure strict adherence to Controller -> Service -> Repository / Listener pattern.\n` +
                   `- Validation Reminder: Ensure DTOs use class-validator or zod.\n` +
-                  `- Run 'turbo run lint' or 'turbo run build' if you modified exported types or interfaces.`;
+                  `- Run the owning repo's documented lint/build/test scripts when exported types or behavior change.`;
     } else {
       reminder += `- Verify syntax and formatting before concluding.`;
     }

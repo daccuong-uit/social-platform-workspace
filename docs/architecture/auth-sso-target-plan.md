@@ -1,11 +1,9 @@
 # Reals Platform — Định hướng công nghệ và kiến trúc SSO & Nền tảng (v5 - Chuẩn hóa)
 
 > **Mục tiêu tài liệu:** Định hướng kiến trúc SSO, hạ tầng và chuẩn hóa công nghệ cho hệ sinh thái `social-platform-workspace`.  
-> **Trạng thái:** Đã tinh chỉnh đồng bộ 100% với bộ 3 tài liệu kiến trúc nền tảng:
-> 1. [01. Kế hoạch Platform Backend (NestJS + PostgreSQL)](file:///d:/social-platform-workspace/.architecture/01.%20K%E1%BA%BF%20ho%E1%BA%A1ch%20Platform%20Backend%20%28NestJS%20+%20PostgreSQL%29.md)
-> 2. [02. Kế hoạch Platform Frontend & Unified Design System (Angular + Tailwind v4)](file:///d:/social-platform-workspace/.architecture/02.%20K%E1%BA%BF%20ho%E1%BA%A1ch%20Platform%20Frontend%20&%20Unified%20Design%20System%20%28Angular%20+%20Tailwind%20v4%29.md)
-> 3. [03. Kế hoạch Shared Contracts & Protocols (Cross-Platform FE & BE)](file:///d:/social-platform-workspace/.architecture/03.%20K%E1%BA%BF%20ho%E1%BA%A1ch%20Shared%20Contracts%20&%20Protocols%20%28Cross-Platform%20FE%20&%20BE%29.md)
+> **Trạng thái:** Kiến trúc đích. Trạng thái rollout và cleanup được theo dõi trong implementation sync plan.
 
+> Tham chiếu: [Platform Backend](./platform-backend-plan.md), [Platform Frontend](./platform-frontend-plan.md), [Shared Contracts](./shared-contracts-plan.md).
 ---
 
 ## 1. Bối cảnh & Tối giản Hạ tầng (Anti Over-Engineering)
@@ -69,23 +67,17 @@
 
 ---
 
-## 5. Lộ trình Triển khai Thực tế (6 Bước)
+## 5. Trạng thái và Bước Tiếp Theo
 
-1. **Bước 1: Chạy Keycloak trong Compose gốc:** Thêm container `keycloak` vào `docker-compose.yml`, import realm `reals` với các OIDC client định cấu hình sẵn, liên kết PostgreSQL cho Keycloak.
-2. **Bước 2: Xây dựng 3 gói Platform nền tảng:**
-   - `@daccuong-uit/contracts`: Đóng gói schemas dùng chung, `UserId` (UUID), `ProblemDetails`.
-   - `platform-backend`: Đóng gói `@daccuong-uit/backend-auth` (JWKS), `backend-event-bus` (Streams Outbox).
-   - `platform-frontend`: Đóng gói Design System tokens, component primitives, và BFF `AuthClient`.
-3. **Bước 3: Nâng cấp Gateway thành OIDC BFF:**
-   - Cài đặt luồng Authorization Code Flow trong Gateway.
-   - Quản lý cookie phiên và lưu trữ token trong Redis.
-   - Thêm endpoint nhận Back-Channel Logout từ Keycloak.
-4. **Bước 4: Chuyển đổi Frontend sang BFF Auth:**
-   - Cập nhật `iam-web-client` thành Landing Page + Account Portal.
-   - Tích hợp `@daccuong-uit/frontend-core` vào cả 6 client, gỡ bỏ toàn bộ logic lưu token cũ trong LocalStorage.
-   - Tích hợp `@daccuong-uit/ui` để đồng bộ UI, font Outfit, và spacing.
-5. **Bước 5: Chuyển đổi Backend sang Keycloak Resource Server:**
-   - Áp dụng `@daccuong-uit/backend-auth` cho các microservices để verify Keycloak JWT.
-   - Rút gọn `iam-service`, di chuyển dữ liệu tài khoản hiện có sang Keycloak giữ nguyên UUID làm `sub`.
-6. **Bước 6: Nâng cấp Event Bus & Hoàn thiện:**
-   - Chuyển Pub/Sub sang Redis Streams + Transactional Outbox Pattern cho các sự kiện quan trọng.
+Các nền tảng dùng chung, Keycloak realm/configuration, Gateway OIDC BFF, backend JWT verifier và frontend AuthClient/UI đã có implementation trong các repository tương ứng. Phần còn lại không phải xây lại các thành phần này mà là đồng bộ từng consumer theo phiên bản package đã publish, kiểm chứng luồng thực tế và chỉ dọn legacy sau khi consumer chuyển xong.
+
+| Lớp | Nguồn implementation | Trạng thái rollout |
+|---|---|---|
+| Backend shared packages và contracts | `platform/` | Có implementation; cần xác nhận package release/registry access và consumer version. |
+| Frontend shared UI và BFF client | `platform-frontend/` | Có implementation; cần phát hành và xác nhận các client resolve đúng package. |
+| Keycloak, realm và infrastructure | `infra/keycloak/`, `docker-compose.yml` | Đã cấu hình trong workspace; xác nhận môi trường qua smoke tests. |
+| Gateway OIDC BFF | `services/gateway/` | Có login/callback/session/refresh/logout/back-channel flow; tiếp tục test theo origin và downstream. |
+| Backend consumers | `services/*/` | Đồng bộ theo service; không giả định mọi package/contract đã được consume chỉ vì dependency tồn tại. |
+| Web clients | `frontend/*/` | Social là client ưu tiên; IAM/Portfolio giữ landing; các client domain còn lại theo phase sản phẩm. |
+
+Thứ tự migration, acceptance gates và cleanup inventory nằm tại [Implementation Sync & Cleanup Plan](./implementation-sync-cleanup-plan.md). Không chạy lại các bước tạo package hoặc dựng BFF như một dự án mới.

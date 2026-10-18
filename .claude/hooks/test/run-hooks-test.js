@@ -130,6 +130,21 @@ runHookTest({
 });
 
 runHookTest({
+  name: 'PreToolUse: Block relative import into stories-service',
+  scriptPath: 'validators/domain-isolation.js',
+  stdinPayload: {
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: 'services/social-service/src/posts/post.service.ts',
+      content: "import { StoriesService } from '../../services/stories-service/src/stories.service';",
+    },
+  },
+  expectedExitCode: 2,
+  expectedStderrContains: 'Architecture Violation: Direct relative cross-service imports are prohibited',
+});
+
+runHookTest({
   name: 'PreToolUse: Allow valid internal import and platform package',
   scriptPath: 'validators/domain-isolation.js',
   stdinPayload: {

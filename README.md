@@ -1,81 +1,13 @@
 # Reals Platform — Workspace
 
-Workspace trung tâm của **Reals Platform** — nền tảng mạng xã hội đa không gian kiến trúc Microservices + Micro-frontend. Chứa cấu hình Docker Compose cho toàn stack, tài liệu kiến trúc và tất cả submodule.
-
----
-
+Workspace điều phối của **Reals Platform** — chứa Docker Compose, infrastructure, tài liệu và các repository độc lập được lồng theo cấu trúc workspace.
 ## Kiến trúc tổng quan
 
-```text
-                        ┌──────────────────────────────────────────────────────────┐
-                        │                FRONTEND CLIENTS  (Angular 21 + Nx)        │
-                        │                                                            │
-  :4200  fe-iam     ────┤  IAM   – SSO Login & Ecosystem Landing  (iam-web-client)  │
-  :4201  fe-social  ────┤  Social – Feeds / Posts / Reels          (social-web-client)│
-  :4202  fe-video   ────┤  Video  – Watch / HLS Streaming          (video-web-client) │
-  :4203  fe-shop    ────┤  Shop   – Storefront / Cart              (shop-web-client)  │
-  :4204  fe-stories ────┤  Stories – Đọc truyện / Author Studio    (stories-web-client)│
-  :4205  fe-portfolio───┤  Portfolio – Dev Portfolio (static SPA)  (portfolio-web-client)│
-                        └──────────────────────┬───────────────────────────────────┘
-                                               │  /api/*  →  nginx reverse proxy
-                                               ▼
-                                   ┌───────────────────┐
-                                   │  gateway  :3000    │  API Gateway (NestJS/Fastify)
-                                   │  JWT verify        │  Rate limiting, routing
-                                   └─────────┬─────────┘
-             ┌─────────────────────┬─────────┴──────────┬───────────────────────┐
-             ▼                     ▼                     ▼                       ▼
-   iam-service :3001    social-service :3002  media-service :3003   stories-service :3004
-   iam_db :5432         social_db :5433       media_db :5434        stories_db :5435
-                              │  │                                        │
-                        Redis :6379  ←──────── shared ───────────────────┘
-                              │
-                        media-worker  →  MinIO :9000  (object storage)
-                              │
-                         jaeger :16686  ←  OTLP traces from all services
-```
+Workspace là polyrepo: root quản lý Compose, infrastructure và orchestration; backend services, frontend clients, `platform` và `platform-frontend` có lịch sử Git độc lập. Web clients đi qua Gateway BFF bằng HttpOnly session cookie; Keycloak là identity provider; IAM sở hữu application profile theo `sub`.
 
----
+Mỗi service sở hữu database riêng. Port, image và runtime configuration được quản lý trong `docker-compose.yml` cùng `.env.example`, không lặp lại ở README.
 
-## Danh mục Hạ tầng (Infrastructure Registry)
-
-| Container | Image | Port Host→Internal | Database | User (default) | Password (default) | Volume | Consumers |
-|---|---|---|---|---|---|---|---|
-| `iam-postgres` | postgres:15-alpine | `5432→5432` | `iam_db` | `iam_admin` | `iam_password` | `iam_postgres_data` | `iam-service` |
-| `social-postgres` | postgres:15-alpine | `5433→5432` | `social_db` | `social_admin` | `social_password` | `social_postgres_data` | `social-service` |
-| `media-postgres` | postgres:15-alpine | `5434→5432` | `media_db` | `media_admin` | `media_password` | `media_postgres_data` | `media-service` |
-| `stories-postgres` | postgres:15-alpine | `5435→5432` | `stories_db` | `stories_admin` | `stories_password` | `stories_postgres_data` | `stories-service` |
-| `redis` | redis:7-alpine | `6379→6379` | — | — | `redis_password` | `redis_data` | iam, media, social, stories, media-worker |
-| `minio` | minio/minio | `9000→9000` (API), `9001→9001` (Console) | — | `minioadmin` | `minioadmin123` | `minio_data` | `media-service`, `media-worker` |
-| `jaeger` | jaegertracing/all-in-one:1.50 | `16686` (UI), `4317` (gRPC), `4318` (HTTP) | — | — | — | — | gateway, iam, media, social, stories |
-
-> **Nguyên lý Database-per-Service**: Mỗi microservice sở hữu đúng 1 database riêng biệt. Không có service nào chia sẻ database với service khác. `stories_db` là database duy nhất cho `stories-service` (biến `STORIES_DATABASE_URL`).
-
----
-
-## Bảng Port đầy đủ
-
-| Thành phần | Port | URL / Ghi chú |
-|---|---|---|
-| **fe-iam** | 4200 | http://localhost:4200 — SSO & Landing |
-| **fe-social** | 4201 | http://localhost:4201 — Mạng xã hội |
-| **fe-video** | 4202 | http://localhost:4202 — Video & Reels |
-| **fe-shop** | 4203 | http://localhost:4203 — Storefront |
-| **fe-stories** | 4204 | http://localhost:4204 — Đọc truyện |
-| **fe-portfolio** | 4205 | http://localhost:4205 — Portfolio |
-| **gateway** | 3000 | http://localhost:3000/api/v1/health |
-| **iam-service** | 3001 | Internal (accessed via gateway) |
-| **social-service** | 3002 | Internal (accessed via gateway) |
-| **media-service** | 3003 | Internal (accessed via gateway) |
-| **stories-service** | 3004 | Internal (accessed via gateway) |
-| **media-worker** | — | No HTTP port (BullMQ consumer only) |
-| **iam-postgres** | 5432 | `iam_db` — Creds: iam_admin/iam_password |
-| **social-postgres** | 5433 | `social_db` — Creds: social_admin/social_password |
-| **media-postgres** | 5434 | `media_db` — Creds: media_admin/media_password |
-| **stories-postgres** | 5435 | `stories_db` — Creds: stories_admin/stories_password |
-| **redis** | 6379 | Password: redis_password |
-| **minio** (API) | 9000 | S3-compatible endpoint |
-| **minio** (Console) | 9001 | http://localhost:9001 — minioadmin/minioadmin123 |
+Tài liệu chuẩn: [docs/README.md](docs/README.md). Hướng dẫn cho agent: [CLAUDE.md](CLAUDE.md).
 | **jaeger** (UI) | 16686 | http://localhost:16686 |
 | **jaeger** (OTLP HTTP) | 4318 | Collector endpoint dùng bởi các service |
 | **jaeger** (OTLP gRPC) | 4317 | Collector endpoint gRPC |
@@ -155,7 +87,7 @@ npm run local:frontend:up
 
 | Lệnh | Mô tả |
 |---|---|
-| `repos:status` | Xem trạng thái git của tất cả 14 repos |
+| `repos:status` | Xem trạng thái git của tất cả 15 repos |
 | `repos:commit` | Stage & commit tất cả repos với message mặc định |
 | `repos:push` | Push tất cả repos lên `origin/main` |
 | `repos:verify` | Kiểm tra `docker compose config` + `git diff --check` tất cả repos |
@@ -166,8 +98,8 @@ npm run local:frontend:up
 
 | Repo | Port | Ngôn ngữ | Trách nhiệm | Database |
 |---|---|---|---|---|
-| `services/gateway` | 3000 | NestJS/Fastify | API Gateway, JWT verify, rate limiting | — |
-| `services/iam-service` | 3001 | NestJS/Fastify | Identity, Auth, SSO, MFA, RBAC | `iam_db` |
+| `services/gateway` | 3000 | NestJS/Fastify | OIDC BFF, session, API routing and rate limiting | — |
+| `services/iam-service` | 3001 | NestJS/Fastify | Application user profiles keyed by Keycloak `sub` | `iam_db` |
 | `services/social-service` | 3002 | NestJS/Fastify | Posts, Feeds, Reels, Videos, Follow graph | `social_db` |
 | `services/media-service` | 3003 | NestJS/Express | Upload, metadata, MinIO, BullMQ dispatch | `media_db` |
 | `services/stories-service` | 3004 | NestJS/Fastify | Novels, Chapters, Library, Wallet, Payouts | `stories_db` |
@@ -177,12 +109,19 @@ npm run local:frontend:up
 
 | Repo | Port | Trách nhiệm | GitHub |
 |---|---|---|---|
-| `frontend/iam-web-client` | 4200 | SSO Login/Register + Ecosystem showcase landing | [daccuong-uit/iam-web-client](https://github.com/daccuong-uit/iam-web-client) |
+| `frontend/iam-web-client` | 4200 | Ecosystem landing; login redirects through Gateway to Keycloak | [daccuong-uit/iam-web-client](https://github.com/daccuong-uit/iam-web-client) |
 | `frontend/social-web-client` | 4201 | Mạng xã hội: Feeds, Posts, Friends, Reels | [daccuong-uit/social-web-client](https://github.com/daccuong-uit/social-web-client) |
 | `frontend/video-web-client` | 4202 | Video & Reels: Watch, HLS Streaming | [daccuong-uit/video-web-client](https://github.com/daccuong-uit/video-web-client) |
 | `frontend/shop-web-client` | 4203 | Thương mại điện tử: Storefront, Cart | [daccuong-uit/shop-web-client](https://github.com/daccuong-uit/shop-web-client) |
 | `frontend/stories-web-client` | 4204 | Đọc/Viết truyện: Long-form, Collections, Studio | [daccuong-uit/stories-web-client](https://github.com/daccuong-uit/stories-web-client) |
 | `frontend/portfolio-web-client` | 4205 | Portfolio kỹ sư Đắc Cường (static SPA) | [daccuong-uit/portfolio-web-client](https://github.com/daccuong-uit/portfolio-web-client) |
+
+## Shared Platform Repositories
+
+| Repo | Nội dung | GitHub |
+|---|---|---|
+| `platform` | Backend libraries và contracts dùng chung | [daccuong-uit/platform](https://github.com/daccuong-uit/platform) |
+| `platform-frontend` | Angular UI primitives và BFF client libraries | [daccuong-uit/platform-frontend](https://github.com/daccuong-uit/platform-frontend) |
 
 ---
 
